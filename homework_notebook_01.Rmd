@@ -1,0 +1,760 @@
+---
+title: "automatization_notebook"
+output: word_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+
+```
+
+# Чтение данных
+
+В вашем варианте нужно использовать датасеты cardio_train_big или cardio_train_not_too_big.
+
+```{r}
+library(readr)
+
+# Прочитать датасет
+cardio_train_big <- read_delim("cardio_train_big.csv", delim = ";")
+
+```
+
+# Выведите общее описание данных
+
+```{r}
+
+str(cardio_train_big)
+
+```
+
+# Очистка данных
+
+1) Уберите переменные, в которых пропущенных значений больше 20% или уберите субъектов со слишком большим количеством пропущенных значений. Или совместите оба варианта. Напишите обоснование, почему вы выбрали тот или иной вариант:
+
+Судя по всему в маленьком данном датасете нет пропущенных значений, в большом только в одной переменной ap_lo. Функции на проверку их наличия:
+
+#Проверка на наличие пропусков или NA в данных:
+check_na_values <- function(data) {
+  missing_values <- sapply(data, function(x) sum(is.na(x)))
+  
+  if (sum(missing_values) > 0) {
+    print("Пропущенные значения найдены в следующих столбцах:")
+    print(missing_values[missing_values > 0])
+  } else {
+    print("Пропущенные значения не найдены.")
+  }
+}
+
+#Проверка на наличие нулей в столбцах, данные которых этого не предполагают:
+Для этой проверки нам нужно знать, в каких столбцах нули не допустимы.
+
+check_zero_values <- function(data, columns_to_check) {
+  zero_values <- sapply(data[columns_to_check], function(x) sum(x == 0, na.rm = TRUE))
+  
+  if (sum(zero_values) > 0) {
+    print("Нулевые значения найдены в следующих столбцах:")
+    print(zero_values[zero_values > 0])
+  } else {
+    print("Нулевые значения в указанных столбцах не найдены.")
+  }
+}
+
+#Проверка
+columns_to_exclude <- c("id", "alco", "smoke", "cardio", "active")
+columns_to_check <- setdiff(names(cardio_train_big), columns_to_exclude)
+
+check_zero_values(cardio_train_big, columns_to_check)
+check_na_values(cardio_train_big)
+
+Анализ нулевых значений в ap_lo:
+Если ap_lo обозначает диастолическое артериальное давление, то нулевые значения в этом столбце являются ошибками.
+
+#Замена нулевых значений на NA:
+cardio_train_big$ap_lo[cardio_train_big$ap_lo == 0] <- NA
+check_na_values(cardio_train_big)
+
+#Удаление переменных, в которых пропущенных значений больше 20%:
+twenty_percent <- nrow(cardio_train_big) * 0.20
+missing_values <- sapply(cardio_train_big, function(x) sum(is.na(x)))
+columns_above_threshold <- names(missing_values[missing_values > twenty_percent])
+
+
+Больше 20% пропусков нет нигде. (Надеюсь, у меня корректный датасет, даже скачала его еще раз и перешла от обработки сокращенного к полному).
+
+Если бы они были: 
+- можно было бы независимо проанализировать данные с пропусками и без и оценить разницу в результатах. В случае значимой разницы в NA можно было бы подставить медианное или среднее и оценить результаты так.
+
+
+**Обоснование**: 
+
+2) Переименуйте переменные в человекочитаемый вид (что делать с пробелами в названиях?Пробелов в названиях быть не должно. Через подчеркивание или с большой буквы);
+
+cardio_train_big <- cardio_train_big %>%
+  rename(
+    patient_id = id,
+    age_days = age,
+    patient_gender = gender,
+    patient_height_cm = height,
+    patient_weight_kg = weight,
+    systolic_bp = ap_hi,
+    diastolic_bp = ap_lo,
+    cholesterol_level = cholesterol,
+    glucose_level = gluc,
+    is_smoker = smoke,
+    consumes_alcohol = alco,
+    is_active = active,
+    has_cardio_disease = cardio
+  )
+
+
+3) В соответствии с описанием данных приведите переменные к нужному типу (numeric или factor);
+
+cardio_train_big$age_days <- as.numeric(cardio_train_big$age_days)
+cardio_train_big$patient_height_cm <- as.numeric(cardio_train_big$patient_height_cm)
+cardio_train_big$patient_weight_kg <- as.numeric(cardio_train_big$patient_weight_kg)
+cardio_train_big$systolic_bp <- as.numeric(cardio_train_big$systolic_bp)
+cardio_train_big$diastolic_bp <- as.numeric(cardio_train_big$diastolic_bp)
+
+cardio_train_big$patient_gender <- as.factor(cardio_train_big$patient_gender)
+cardio_train_big$cholesterol_level <- factor(cardio_train_big$cholesterol_level,
+                                             levels = c(1, 2, 3),
+                                             labels = c("normal", "above_normal", "well_above_normal"))
+cardio_train_big$glucose_level <- factor(cardio_train_big$glucose_level,
+                                         levels = c(1, 2, 3),
+                                         labels = c("normal", "above_normal", "well_above_normal"))
+cardio_train_big$is_smoker <- as.factor(cardio_train_big$is_smoker)
+cardio_train_big$consumes_alcohol <- as.factor(cardio_train_big$consumes_alcohol)
+cardio_train_big$is_active <- as.factor(cardio_train_big$is_active)
+cardio_train_big$has_cardio_disease <- as.factor(cardio_train_big$has_cardio_disease)
+
+
+4) Отсортируйте данные по возрасту по убыванию;
+cardio_train_big <- cardio_train_big %>% 
+  arrange(desc(age_days))
+
+
+5) Сохраните в файл outliers.csv субъектов, которые являются выбросами (например, по правилу трёх сигм) — это необязательное задание со звёздочкой;
+
+library(dplyr)
+
+outliers <- cardio_train_big %>%
+  filter(
+    age_days < mean(age_days) - 3*sd(age_days) | age_days > mean(age_days) + 3*sd(age_days) |
+    patient_height_cm < mean(patient_height_cm) - 3*sd(patient_height_cm) | patient_height_cm > mean(patient_height_cm) + 3*sd(patient_height_cm) |
+    patient_weight_kg < mean(patient_weight_kg) - 3*sd(patient_weight_kg) | patient_weight_kg > mean(patient_weight_kg) + 3*sd(patient_weight_kg) |
+    systolic_bp < mean(systolic_bp) - 3*sd(systolic_bp) | systolic_bp > mean(systolic_bp) + 3*sd(systolic_bp) |
+    diastolic_bp < mean(diastolic_bp) - 3*sd(diastolic_bp) | diastolic_bp > mean(diastolic_bp) + 3*sd(diastolic_bp)
+  )
+
+write.csv(outliers, "outliers.csv", row.names = FALSE)
+
+
+
+6) Присвойте получившийся датасет переменной "cleaned_data".
+
+cleaned_data <- cardio_train_big %>% 
+  anti_join(outliers, by = "patient_id")
+
+
+
+
+cleaned_data <- cardio_train_big %>%
+  filter(
+    !(age_days < mean(age_days) - 3*sd(age_days) | age_days > mean(age_days) + 3*sd(age_days)),
+    !(patient_height_cm < mean(patient_height_cm) - 3*sd(patient_height_cm) | patient_height_cm > mean(patient_height_cm) + 3*sd(patient_height_cm)),
+    !(patient_weight_kg < mean(patient_weight_kg) - 3*sd(patient_weight_kg) | patient_weight_kg > mean(patient_weight_kg) + 3*sd(patient_weight_kg)),
+    !(systolic_bp < mean(systolic_bp) - 3*sd(systolic_bp) | systolic_bp > mean(systolic_bp) + 3*sd(systolic_bp)),
+    !(diastolic_bp < mean(diastolic_bp) - 3*sd(diastolic_bp) | diastolic_bp > mean(diastolic_bp) + 3*sd(diastolic_bp))
+  )
+  
+  или
+
+cleaned_data <- cardio_train_big %>% 
+  filter_all(all_vars(!( . < mean(.) - 3*sd(.) | . > mean(.) + 3*sd(.))))
+
+или 
+
+cleaned_data <- cardio_train_big %>%
+  filter(
+    between(age_days, quantile(age_days, 0.01), quantile(age_days, 0.99)),
+    between(patient_height_cm, quantile(patient_height_cm, 0.01), quantile(patient_height_cm, 0.99)),
+    between(patient_weight_kg, quantile(patient_weight_kg, 0.01), quantile(patient_weight_kg, 0.99)),
+    between(systolic_bp, quantile(systolic_bp, 0.01), quantile(systolic_bp, 0.99)),
+    between(diastolic_bp, quantile(diastolic_bp, 0.01), quantile(diastolic_bp, 0.99))
+  )
+
+num_rows <- nrow(cleaned_data)
+num_rows
+
+
+
+
+#Проверяем почему по правилу трех сигм отфильтровывается вообще все до нуля:
+
+temp_data_height <- cardio_train_big %>% 
+  filter(patient_height_cm >= mean(patient_height_cm) - 3*sd(patient_height_cm) & 
+         patient_height_cm <= mean(patient_height_cm) + 3*sd(patient_height_cm))
+
+num_rows_height <- nrow(temp_data_height)
+num_rows_height
+
+
+temp_data_weight <- cardio_train_big %>% 
+  filter(patient_weight_kg >= mean(patient_weight_kg) - 3*sd(patient_weight_kg) & 
+         patient_weight_kg <= mean(patient_weight_kg) + 3*sd(patient_weight_kg))
+
+num_rows_weight <- nrow(temp_data_weight)
+num_rows_weight
+
+
+temp_data_systolic <- cardio_train_big %>% 
+  filter(systolic_bp >= mean(systolic_bp) - 3*sd(systolic_bp) & 
+         systolic_bp <= mean(systolic_bp) + 3*sd(systolic_bp))
+
+num_rows_systolic <- nrow(temp_data_systolic)
+num_rows_systolic
+
+
+temp_data_diastolic <- cardio_train_no_na %>% 
+  filter(diastolic_bp >= mean(diastolic_bp) - 3*sd(diastolic_bp) & 
+         diastolic_bp <= mean(diastolic_bp) + 3*sd(diastolic_bp))
+
+num_rows_diastolic <- nrow(temp_data_diastolic)
+num_rows_diastolic
+
+library(ggplot2)
+
+# Гистограмма для diastolic_bp
+ggplot(cardio_train_big, aes(x = diastolic_bp)) +
+  geom_histogram(binwidth = 5, fill = "blue", color = "black", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Distribution of Diastolic Blood Pressure", x = "Diastolic BP", y = "Count")
+
+# Основные статистические показатели
+summary(cardio_train_big$diastolic_bp)
+
+*Минимум на -70, очевидно добавили тире. Максимум на 11000 - добавили два нуля. Попробуем переписать: 
+
+#Исправим отрицательные значения: 
+
+cardio_train_big$diastolic_bp <- ifelse(cardio_train_big$diastolic_bp < 0, 
+                                        -cardio_train_big$diastolic_bp, 
+                                        cardio_train_big$diastolic_bp)
+#Убираем лишние нули:
+
+cardio_train_big$diastolic_bp <- ifelse(cardio_train_big$diastolic_bp > 999, 
+                                        cardio_train_big$diastolic_bp / 10^floor(log10(cardio_train_big$diastolic_bp) - 2), 
+                                        cardio_train_big$diastolic_bp)
+
+
+
+
+
+```{r}
+
+
+
+```
+
+# Сколько осталось переменных?
+
+```{r}
+num_columns <- ncol(cleaned_data)
+num_columns
+
+```
+
+# Сколько осталось случаев?
+
+```{r}
+num_rows <- nrow(cleaned_data)
+num_rows
+
+```
+
+# Есть ли в данных идентичные строки?
+
+```{r}
+
+duplicate_rows_without_id <- cleaned_data[duplicated(select(cleaned_data, -patient_id)) | 
+                                        duplicated(select(cleaned_data, -patient_id), fromLast = TRUE), ]
+
+num_duplicates_without_id <- nrow(duplicate_rows_without_id)
+num_duplicates_without_id
+
+```
+
+# Сколько всего переменных с пропущенными значениями в данных и сколько пропущенных точек в каждой такой переменной?
+
+```{r}
+# Вычисление количества пропущенных значений для каждой переменной
+missing_values <- sapply(cleaned_data, function(x) sum(is.na(x)))
+
+# Отбор переменных с пропущенными значениями
+variables_with_na <- missing_values[missing_values > 0]
+
+# Вывод результатов
+length(variables_with_na) # Количество переменных с пропущенными значениями
+variables_with_na         # Количество пропущенных значений для каждой из этих переменных
+
+
+
+```
+
+# Описательные статистики
+
+## Количественные переменные
+
+1) Рассчитайте для всех количественных переменных для каждой группы (наличие или отсутствие сердечно-сосудистых заболеваний):
+
+
+summary_stats
+
+
+1.1) Количество значений;
+
+library(dplyr)
+
+count_values <- cleaned_data %>%
+  group_by(has_cardio_disease) %>%
+  summarise(
+    count_age = sum(!is.na(age_days)),
+    count_height = sum(!is.na(patient_height_cm)),
+    count_weight = sum(!is.na(patient_weight_kg)),
+    count_systolic_bp = sum(!is.na(systolic_bp)),
+    count_diastolic_bp = sum(!is.na(diastolic_bp))
+  )
+
+count_values
+
+
+1.2) Количество пропущенных значений;
+
+library(dplyr)
+
+count_missing_values <- cleaned_data %>%
+  group_by(has_cardio_disease) %>%
+  summarise(
+    missing_age = sum(is.na(age_days)),
+    missing_height = sum(is.na(patient_height_cm)),
+    missing_weight = sum(is.na(patient_weight_kg)),
+    missing_systolic_bp = sum(is.na(systolic_bp)),
+    missing_diastolic_bp = sum(is.na(diastolic_bp))
+  )
+
+count_missing_values
+
+
+1.3) Среднее;
+
+mean_values <- cleaned_data %>%
+  group_by(has_cardio_disease) %>%
+  summarise(
+    mean_age = mean(age_days, na.rm = TRUE),
+    mean_height = mean(patient_height_cm, na.rm = TRUE),
+    mean_weight = mean(patient_weight_kg, na.rm = TRUE),
+    mean_systolic_bp = mean(systolic_bp, na.rm = TRUE),
+    mean_diastolic_bp = mean(diastolic_bp, na.rm = TRUE)
+  )
+
+mean_values
+
+
+1.4) Медиану;
+
+library(dplyr)
+
+median_values <- cleaned_data %>%
+  group_by(has_cardio_disease) %>%
+  summarise(
+    median_age = median(age_days, na.rm = TRUE),
+    median_height = median(patient_height_cm, na.rm = TRUE),
+    median_weight = median(patient_weight_kg, na.rm = TRUE),
+    median_systolic_bp = median(systolic_bp, na.rm = TRUE),
+    median_diastolic_bp = median(diastolic_bp, na.rm = TRUE)
+  )
+
+median_values
+
+
+1.5) Стандартное отклонение;
+
+std_dev_values <- cleaned_data %>%
+  group_by(has_cardio_disease) %>%
+  summarise(
+    sd_age = sd(age_days, na.rm = TRUE),
+    sd_height = sd(patient_height_cm, na.rm = TRUE),
+    sd_weight = sd(patient_weight_kg, na.rm = TRUE),
+    sd_systolic_bp = sd(systolic_bp, na.rm = TRUE),
+    sd_diastolic_bp = sd(diastolic_bp, na.rm = TRUE)
+  )
+
+std_dev_values
+
+1.6) 25% квантиль и 75% квантиль;
+
+quantile_values <- cleaned_data %>%
+  group_by(has_cardio_disease) %>%
+  summarise(
+    q25_age = quantile(age_days, 0.25, na.rm = TRUE),
+    q75_age = quantile(age_days, 0.75, na.rm = TRUE),
+    q25_height = quantile(patient_height_cm, 0.25, na.rm = TRUE),
+    q75_height = quantile(patient_height_cm, 0.75, na.rm = TRUE),
+    q25_weight = quantile(patient_weight_kg, 0.25, na.rm = TRUE),
+    q75_weight = quantile(patient_weight_kg, 0.75, na.rm = TRUE),
+    q25_systolic_bp = quantile(systolic_bp, 0.25, na.rm = TRUE),
+    q75_systolic_bp = quantile(systolic_bp, 0.75, na.rm = TRUE),
+    q25_diastolic_bp = quantile(diastolic_bp, 0.25, na.rm = TRUE),
+    q75_diastolic_bp = quantile(diastolic_bp, 0.75, na.rm = TRUE)
+  )
+
+quantile_values
+
+
+1.7) Интерквартильный размах;
+
+iqr_values <- cleaned_data %>%
+  group_by(has_cardio_disease) %>%
+  summarise(
+    iqr_age = IQR(age_days, na.rm = TRUE),
+    iqr_height = IQR(patient_height_cm, na.rm = TRUE),
+    iqr_weight = IQR(patient_weight_kg, na.rm = TRUE),
+    iqr_systolic_bp = IQR(systolic_bp, na.rm = TRUE),
+    iqr_diastolic_bp = IQR(diastolic_bp, na.rm = TRUE)
+  )
+
+iqr_values
+
+1.8) Минимум;
+
+min_values <- cleaned_data %>%
+  group_by(has_cardio_disease) %>%
+  summarise(
+    min_age = min(age_days, na.rm = TRUE),
+    min_height = min(patient_height_cm, na.rm = TRUE),
+    min_weight = min(patient_weight_kg, na.rm = TRUE),
+    min_systolic_bp = min(systolic_bp, na.rm = TRUE),
+    min_diastolic_bp = min(diastolic_bp, na.rm = TRUE)
+  )
+
+min_values
+
+!!!Убрать отриц знач 
+
+1.9) Максимум;
+
+max_values <- cleaned_data %>%
+  group_by(has_cardio_disease) %>%
+  summarise(
+    max_age = max(age_days, na.rm = TRUE),
+    max_height = max(patient_height_cm, na.rm = TRUE),
+    max_weight = max(patient_weight_kg, na.rm = TRUE),
+    max_systolic_bp = max(systolic_bp, na.rm = TRUE),
+    max_diastolic_bp = max(diastolic_bp, na.rm = TRUE)
+  )
+
+max_values
+
+!!!Тут беда с максимумами 
+
+1.10) 95% ДИ для среднего - задание со звёздочкой.
+
+```{r}
+
+library(broom)
+
+confidence_intervals <- cleaned_data %>%
+  group_by(has_cardio_disease) %>%
+  do(
+    conf_int_age = tidy(t.test(.$age_days, conf.level = 0.95))["conf.int",],
+    conf_int_height = tidy(t.test(.$patient_height_cm, conf.level = 0.95))["conf.int",],
+    conf_int_weight = tidy(t.test(.$patient_weight_kg, conf.level = 0.95))["conf.int",],
+    conf_int_systolic_bp = tidy(t.test(.$systolic_bp, conf.level = 0.95))["conf.int",],
+    conf_int_diastolic_bp = tidy(t.test(.$diastolic_bp, conf.level = 0.95))["conf.int",]
+  )
+
+confidence_intervals
+
+!!!Хз, надо чистить данные нормально
+
+```
+
+## Категориальные переменные
+
+1) Рассчитайте для всех категориальных переменных для каждой группы (наличие или отсутствие сердечно-сосудистых заболеваний):
+
+1.1) Абсолютное количество;
+
+categorical_vars <- c("patient_gender", "cholesterol_level", "glucose_level", "is_smoker", "consumes_alcohol", "is_active")
+
+results <- list()
+
+for (var in categorical_vars) {
+  results[[var]] <- cleaned_data %>%
+    group_by(has_cardio_disease, !!sym(var)) %>%
+    count()
+}
+
+results
+
+
+1.2) Относительное количество внутри группы;
+
+categorical_vars <- c("patient_gender", "cholesterol_level", "glucose_level", "is_smoker", "consumes_alcohol", "is_active")
+
+results_proportions <- list()
+
+for (var in categorical_vars) {
+  results_proportions[[var]] <- cleaned_data %>%
+    group_by(has_cardio_disease, !!sym(var)) %>%
+    summarise(count = n()) %>%
+    mutate(proportion = count / sum(count))
+}
+
+results_proportions
+
+
+1.3) 95% ДИ для доли внутри группы - задание со звёздочкой.
+
+```{r}
+
+
+
+```
+
+# Визуализация
+
+## Количественные переменные
+
+1) Для каждой количественной переменной сделайте боксплоты по группам. Расположите их либо на отдельных рисунках, либо на одном, но читаемо;
+
+library(ggplot2)
+library(rlang)
+
+# Список количественных переменных
+quantitative_vars <- c("age_days", "patient_height_cm", "patient_weight_kg", "systolic_bp", "diastolic_bp")
+
+# Создаем боксплоты для каждой переменной
+for (var in quantitative_vars) {
+  plot <- ggplot(cleaned_data, aes(x = has_cardio_disease, y = !!sym(var))) +
+    geom_boxplot() +
+    labs(title = paste("Boxplot of", var, "by Cardiovascular Disease Status"), 
+         x = "Cardiovascular Disease", y = var) +
+    theme_minimal()
+  
+  print(plot)
+}
+
+
+
+
+2) Наложите на боксплоты beeplots - задание со звёздочкой.
+
+library(ggplot2)
+library(rlang)
+
+quantitative_vars <- c("age_days", "patient_height_cm", "patient_weight_kg", "systolic_bp", "diastolic_bp")
+
+for (var in quantitative_vars) {
+  plot <- ggplot(cleaned_data, aes(x = has_cardio_disease, y = !!sym(var))) +
+    geom_boxplot(alpha = 0.7) + 
+    geom_jitter(aes(color = has_cardio_disease), width = 0.3, size = 1, alpha = 0.7) +
+    labs(title = paste("Boxplot with Beeplot of", var, "by Cardiovascular Disease Status"), 
+         x = "Cardiovascular Disease", y = var) +
+    theme_minimal() +
+    scale_color_manual(values = c("#FF0000", "#0000FF")) 
+  
+  print(plot)
+}
+
+
+3) Раскрасьте боксплоты с помощью библиотеки RColorBrewer.
+
+```{r}
+install.packages("RColorBrewer")
+
+library(ggplot2)
+library(RColorBrewer)
+library(rlang)
+
+# Создание палитры
+palette_colors <- brewer.pal(2, "RdYlBu")
+
+quantitative_vars <- c("age_days", "patient_height_cm", "patient_weight_kg", "systolic_bp", "diastolic_bp")
+
+for (var in quantitative_vars) {
+  plot <- ggplot(cleaned_data, aes(x = has_cardio_disease, y = !!sym(var))) +
+    geom_boxplot(aes(fill = has_cardio_disease), alpha = 0.7) + 
+    geom_jitter(aes(color = has_cardio_disease), width = 0.3, size = 1, alpha = 0.7) +
+    labs(title = paste("Boxplot with Beeplot of", var, "by Cardiovascular Disease Status"), 
+         x = "Cardiovascular Disease", y = var) +
+    theme_minimal() +
+    scale_color_manual(values = palette_colors) +
+    scale_fill_manual(values = palette_colors)
+  
+  print(plot)
+}
+
+
+```
+
+## Категориальные переменные
+
+1) Сделайте подходящие визуализации категориальных переменных. Обоснуйте, почему выбрали именно этот тип.
+
+```{r}
+
+library(ggplot2)
+library(RColorBrewer)
+
+# Создание палитры
+palette_colors <- brewer.pal(2, "Set1")
+
+categorical_vars <- c("patient_gender", "cholesterol_level", "glucose_level", "is_smoker", "consumes_alcohol", "is_active")
+
+for (var in categorical_vars) {
+  plot <- ggplot(cleaned_data, aes(x = !!sym(var), fill = has_cardio_disease)) +
+    geom_bar(position = "dodge", width = 0.7) +
+    labs(title = paste("Distribution of", var, "by Cardiovascular Disease Status"),
+         x = var, y = "Count") +
+    theme_minimal() +
+    scale_fill_manual(values = palette_colors) +
+    guides(fill = guide_legend(title = "Cardio Disease"))
+    
+  print(plot)
+}
+
+
+```
+
+
+
+# Статистические оценки
+
+## Проверка на нормальность
+
+1) Оцените каждую переменную на соответствие нормальному распределению с помощью теста Шапиро-Уилка. Какие из переменных являются нормальными и как как вы это поняли?
+
+```{r}
+set.seed(123) # Для воспроизводимости
+
+# Выберите случайные 5000 наблюдений
+sample_data <- cleaned_data %>% sample_n(5000)
+
+# Примените тест Шапиро-Уилка к подвыборкам
+variables_to_test <- c("age_days", "patient_height_cm", "patient_weight_kg", "systolic_bp", "diastolic_bp")
+
+shapiro_results <- sapply(variables_to_test, function(var_name) {
+  shapiro.test(sample_data[[var_name]])$p.value
+})
+
+shapiro_results
+
+```
+
+Обычно используется пороговое значение p = 0.05. Если p-значение меньше этого порога, то принимается гипотеза о том, что данные не распределены нормально.
+
+В данном случае, p-значения для всех переменных намного меньше 0.05, что указывает на отклонение от нормального распределения для всех переменных. Следовательно, ни одна из переменных не соответствует нормальному распределению.
+
+Таким образом, на основе теста Шапиро-Уилка, мы можем заключить, что ни одна из проверенных переменных не имеет нормального распределения.
+
+
+2) Постройте для каждой количественной переменной QQ-плот. Отличаются ли выводы от теста Шапиро-Уилка? Какой метод вы бы предпочли и почему?
+
+```{r}
+
+library(ggplot2)
+
+# QQ-plot для age_days
+qqnorm(cleaned_data$age_days, main = "QQ-plot for Age Days")
+qqline(cleaned_data$age_days)
+
+# QQ-plot для patient_height_cm
+qqnorm(cleaned_data$patient_height_cm, main = "QQ-plot for Patient Height")
+qqline(cleaned_data$patient_height_cm)
+
+# QQ-plot для patient_weight_kg
+qqnorm(cleaned_data$patient_weight_kg, main = "QQ-plot for Patient Weight")
+qqline(cleaned_data$patient_weight_kg)
+
+# QQ-plot для systolic_bp
+qqnorm(cleaned_data$systolic_bp, main = "QQ-plot for Systolic Blood Pressure")
+qqline(cleaned_data$systolic_bp)
+
+# QQ-plot для diastolic_bp
+qqnorm(cleaned_data$diastolic_bp, main = "QQ-plot for Diastolic Blood Pressure")
+qqline(cleaned_data$diastolic_bp)
+
+
+```
+
+Если точки следуют по диагонали (по прямой линии qqline), это указывает на нормальное распределение данных. Если точки сильно отклоняются от диагонали, это может указывать на то, что данные не соответствуют нормальному распределению.В данном случае примерно приближается к нормальному распределению только patient height.
+
+Тест Шапиро-Уилка: Быстрый способ получить формальное статистическое подтверждение о нормальности данных.
+QQ-график: Предоставляет визуальное представление распределения данных, что может быть полезно при предварительной обработке данных и исследовательском анализе.
+Предпочла бы использовать оба метода в сочетании. В то время как тест Шапиро-Уилка может предоставить формальное заключение, QQ-график может помочь увидеть, в какой именно части распределения происходят отклонения, что может быть полезно для понимания природы данных и для их дополнительно отчистки он выбросов.
+
+
+3) Ниже напишите, какие ещё методы проверки на нормальность вы знаете и какие у них есть ограничения.
+
+**Графические методы:
+
+Гистограмма: Позволяет визуально сравнить форму распределения данных с формой нормального распределения. Ограничение этого метода в том, что он субъективен и зависит от выбранного числа интервалов.
+QQ-график (квантиль-квантиль график): Если точки на графике следуют по прямой линии, это указывает на нормальное распределение. Ограничением является то, что он также в определенной степени субъективен.
+
+Статистические тесты:
+
+Тест Шапиро-Уилка: Хорошо известен своей надежностью, но он имеет ограничение по размеру выборки (до 5000 наблюдений в R). Для больших выборок тест может обнаруживать малые отклонения от нормальности, которые не обязательно практически значимы.
+Тест Колмогорова-Смирнова: Может быть использован для больших выборок, но менее мощен для обнаружения отклонений от нормальности по сравнению с тестом Шапиро-Уилка.
+Тест Андерсона-Дарлинга: Этот тест уделяет больше внимания хвостам распределения по сравнению с тестом Колмогорова-Смирнова.
+Тест Жарка-Бера: Основан на скосности и эксцессе. Этот тест хорошо подходит для больших выборок.
+
+Основные моменты распределения:
+Скосность и эксцесс: Измеряют асимметрию и "тяжесть" хвостов распределения соответственно. Если данные нормальные, ожидаемые значения скосности и эксцесса равны 0 и 3 соответственно.
+
+Ограничения:
+Все статистические тесты проверки на нормальность имеют меньшую мощность на малых выборках, что означает, что на малых выборках труднее обнаружить отклонения от нормальности.
+Тесты могут выдавать значимые результаты для больших выборок даже при незначительных отклонениях от нормальности. Это означает, что при больших размерах выборки необходимо также полагаться на графические методы и практический смысл результатов теста.
+Важно помнить, что "не отклонение от нормальности" не означает, что данные обязательно нормально распределены. Тесты могут только отвергать или не отвергать гипотезу о нормальности.
+В итоге выбор метода зависит от размера выборки, целей исследования и конкретного контекста*
+
+
+## Сравнение групп
+
+1) Сравните группы (переменная **cardio**) по каждой переменной (как количественной, так и категориальной). Для каждой переменной выберите нужный критерий и кратко обоснуйте его выбор в комментариях.
+
+```{r}
+
+
+
+```
+
+# Далее идут **необязательные** дополнительные задания, которые могут принести вам дополнительные баллы в том числе в случае ошибок в предыдущих
+
+## Корреляционный анализ
+
+1) Создайте корреляционную матрицу с визуализацией и поправкой на множественные сравнения. Объясните, когда лучше использовать корреляционные матрицы и в чём минусы и плюсы корреляционных исследований.
+
+```{r}
+
+
+
+```
+
+## Моделирование
+
+1) Постройте регрессионную модель для переменной **cardio**. Опишите процесс построения
+
+```{r}
+
+
+
+```
+
+
+
+
