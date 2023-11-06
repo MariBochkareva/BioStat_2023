@@ -1,0 +1,400 @@
+---
+title: "Data visualization. HW1"
+author: "Maria Bochkareva"
+date: "2023-11-04"
+output: html_document
+---
+&nbsp;
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Задание №1. Загрузите датасет insurance_cost.csv (лежит в папке домашнего задания). Это данные по базовым показателям здоровья индивида и сумме, которую страховая компания заплатила за его лечение в год. Обычно эти данные используют, чтобы потренироваться в предсказании того, как определённые характеристики индивида повышают траты страховой компании (и, соответственно, должны быть заложены в цену страховки).
+
+#Загрузим данные:
+```{r}
+insurance_cost <- read.csv('insurance_cost.csv',
+                 stringsAsFactors = T)
+
+head(insurance_cost)
+
+```
+#Посмотрим структуру данных и описательные статистики: 
+```{r}
+str(insurance_cost)
+
+
+summary(insurance_cost)
+
+
+if (!require("skimr")) install.packages("skimr")
+library(skimr)
+skim(insurance_cost)
+```
+&nbsp;
+&nbsp;
+&nbsp;
+
+Задание №2. Выведите гистограммы всех нумерических переменных.
+
+#Загружаем библиотеку
+```{r}
+library(ggplot2)
+```
+
+#Вывод гистограмм всех нумерических переменных: 
+```{r}
+
+# Гистограмма для переменной возраста (age)
+ggplot(insurance_cost, aes(x = age)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
+  labs(title = "Гистограмма возраста", x = "Возраст", y = "Количество") +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Гистограмма для переменной BMI (bmi)
+ggplot(insurance_cost, aes(x = bmi)) +
+  geom_histogram(binwidth = 1, fill = "green", color = "black") +
+  labs(title = "Гистограмма BMI", x = "BMI", y = "Количество") +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Гистограмма для переменной количества детей (children)
+ggplot(insurance_cost, aes(x = children)) +
+  geom_histogram(binwidth = 1, fill = "orange", color = "black") +
+  labs(title = "Гистограмма количества детей", x = "Количество детей", y = "Количество") +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Гистограмма для переменной стоимости страховки (charges)
+ggplot(insurance_cost, aes(x = charges)) +
+  geom_histogram(binwidth = 1000, fill = "red", color = "black") +
+  labs(title = "Гистограмма стоимости страховки", x = "Стоимость страховки", y = "Количество") +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+&nbsp;
+&nbsp;
+&nbsp;
+
+
+Задание №3. Нарисуйте график плотности по колонке charges. Отметьте вертикальные линии средней и медианы на графике. Раскрасьте текст и линии средней и медианы разными цветами. Добавьте текстовые пояснения значения средней и медианы. Подберите тему для графика. Назовите оси.
+
+```{r}
+# Вычислим среднее и медиану для переменной 'charges'
+mean_charges <- mean(insurance_cost$charges)
+median_charges <- median(insurance_cost$charges)
+
+# График плотности для переменной 'charges'
+charges_desity <- ggplot(insurance_cost, aes(x = charges)) +
+  geom_density(fill = "lightblue", alpha = 0.5) +
+  geom_vline(aes(xintercept = mean_charges), color = "red", linetype = "dashed", linewidth = 1) +
+  geom_vline(aes(xintercept = median_charges), color = "blue", linetype = "dashed", linewidth = 1) +
+  geom_text(aes(x = mean_charges, label = paste("Среднее:", round(mean_charges, 2)), y = 0.000002), 
+            color = "red", vjust = -20, hjust = -0.1) +
+  geom_text(aes(x = median_charges, label = paste("Медиана:", round(median_charges, 2)), y = 0.000002), 
+            color = "blue", vjust = - 25, hjust = -0.1) +
+  labs(title = "График плотности стоимости страховки", x = "Стоимость страховки", y = "Плотность") +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+&nbsp;
+&nbsp;
+&nbsp;
+
+
+Задание №4. Сделайте три box_plot по отношению переменных charges и (1) sex (2) smoker (3) 
+region. Подберите тему для графика. Назовите оси.
+
+```{r}
+#install.packages("ggpubr")
+library(ggpubr)
+
+# Создаем три отдельных графика
+boxplot_sex <- ggplot(insurance_cost, aes(x = sex, y = charges)) +
+  geom_boxplot() +
+  labs(x = "Пол", y = "Стоимость страховки") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))# Поворот подписей на 45 градусов
+
+boxplot_smoker <- ggplot(insurance_cost, aes(x = smoker, y = charges)) +
+  geom_boxplot() +
+  labs(x = "Курильщик", y = " ") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))# Поворот подписей на 45 градусов
+
+boxplot_region <- ggplot(insurance_cost, aes(x = region, y = charges)) +
+  geom_boxplot() +
+  labs(x = "Регион", y = " ") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))# Поворот подписей на 45 градусов
+
+# Используем ggarrange для объединения графиков
+combined_boxplots <- ggarrange(boxplot_sex, boxplot_smoker, boxplot_region,
+                               ncol = 3, nrow = 1,
+                               common.legend = TRUE, legend = "bottom")
+
+# Добавляем общий заголовок с помощью annotate_figure
+combined_boxplots_with_title <- annotate_figure(combined_boxplots,
+                                                top = text_grob("Зависимость стоимости страховки от пола, курения и региона", 
+                                                                size = 14, face = "bold"))
+
+# Выводим график на экран
+print(combined_boxplots_with_title)
+```
+&nbsp;
+&nbsp;
+&nbsp;
+
+Задание №5.Объедините графики из заданий 3 и 4 в один так, чтобы сверху шёл один график из задания 3, а под ним 3 графика из задания 4. Сделайте общее название для графика.
+
+```{r}
+# Используем ggarrange для объединения графиков
+combined_plots <- ggarrange(charges_desity, # График из задания 3
+                            combined_boxplots_with_title, # Графики из задания 4
+                            ncol = 1, nrow = 2, # Один столбец, две строки
+                            common.legend = TRUE, legend = "bottom") # Общая легенда
+
+# Добавляем общий заголовок с помощью annotate_figure
+combined_plots_with_title <- annotate_figure(combined_plots,
+                                             top = text_grob("Общее влияние пола, курения и региона на стоимость страховки",
+                                                             size = 14, face = "bold"))
+
+# Выводим график на экран
+print(combined_plots_with_title)
+```
+&nbsp;
+&nbsp;
+&nbsp;
+
+Задание №6. Сделайте фасет графика из задания 3 по колонке region.
+
+```{r}
+# График плотности для переменной 'charges' по региону
+charges_density_facet <- ggplot(insurance_cost, aes(x = charges)) +
+  geom_density(fill = "lightblue", alpha = 0.5) +
+  geom_vline(aes(xintercept = mean_charges), color = "red", linetype = "dashed", linewidth = 1) +
+  geom_vline(aes(xintercept = median_charges), color = "blue", linetype = "dashed", linewidth = 1) +
+  geom_text(aes(x = mean_charges, label = paste("Среднее:", round(mean_charges, 2)), y = 0.000002), 
+            color = "red", vjust = -20, hjust = -0.1) +
+  geom_text(aes(x = median_charges, label = paste("Медиана:", round(median_charges, 2)), y = 0.000002), 
+            color = "blue", vjust = - 25, hjust = -0.1) +
+  labs(title = "График плотности стоимости страховки по регионам", 
+       x = "Стоимость страховки", y = "Плотность") +
+  facet_wrap(~ region) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Выводим график на экран
+print(charges_density_facet)
+
+```
+&nbsp;
+&nbsp;
+&nbsp;
+
+Задание №7. Постройте scatter plot отношения переменных age и charges. Добавьте названия осей, название графика и тему. Сделайте так, чтобы числа по оси Х отображались 14 шрифтом.
+
+```{r}
+# Scatter plot для отношения переменных 'age' и 'charges'
+scatter_plot <- ggplot(insurance_cost, aes(x = age, y = charges)) +
+  geom_point(alpha = 0.5) +  # Добавляем точки на график с небольшой прозрачностью
+  labs(title = "Зависимость стоимости страховки от возраста", 
+       x = "Возраст", 
+       y = "Стоимость страховки") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),  # Центрируем заголовок
+        axis.text.x = element_text(size = 14))  # Увеличиваем размер шрифта для оси X
+
+# Выводим график на экран
+print(scatter_plot)
+
+```
+&nbsp;
+&nbsp;
+&nbsp;
+
+Задание №8.Проведите линию тренда для предыдущего графика.
+
+```{r}
+# Scatter plot с линией тренда для отношения переменных 'age' и 'charges'
+scatter_plot_with_trend <- ggplot(insurance_cost, aes(x = age, y = charges)) +
+  geom_point(alpha = 0.5) +  # Добавляем точки на график с небольшой прозрачностью
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +  # Добавляем линию тренда
+  labs(title = "Зависимость стоимости страховки от возраста с линией тренда", 
+       x = "Возраст", 
+       y = "Стоимость страховки") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),  # Центрируем заголовок
+        axis.text.x = element_text(size = 14))  # Увеличиваем размер шрифта для оси X
+
+# Выводим график на экран
+print(scatter_plot_with_trend)
+
+```
+&nbsp;
+&nbsp;
+&nbsp;
+
+Задание №9. Сделайте разбивку предыдущего графика по колонке smokers (у вас должно 
+получится две линии тренда для курящих и нет).
+
+```{r}
+# Scatter plot с двумя линиями тренда для отношения переменных 'age' и 'charges', разделенных по 'smoker'
+scatter_plot_with_trend_smokers <- ggplot(insurance_cost, aes(x = age, y = charges, color = smoker)) +
+  geom_point(alpha = 0.5) +  # Добавляем точки с прозрачностью
+  geom_smooth(method = "lm", se = FALSE, aes(group = smoker)) +  # Добавляем линии тренда по группам
+  labs(title = "Зависимость стоимости страховки от возраста с разделением по курению", 
+       x = "Возраст", 
+       y = "Стоимость страховки") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),  # Центрируем заголовок
+        axis.text.x = element_text(size = 14))  # Увеличиваем размер шрифта для оси X
+
+# Выводим график на экран
+print(scatter_plot_with_trend_smokers)
+
+```
+&nbsp;
+&nbsp;
+&nbsp;
+
+Задание №10.  Сделайте график из заданий 7-9, но вместо переменной age используйте переменную bmi.
+
+```{r}
+# Scatter plot с двумя линиями тренда для отношения переменных 'bmi' и 'charges', разделенных по 'smoker'
+scatter_plot_bmi__with_trend_smokers <- ggplot(insurance_cost, aes(x = bmi, y = charges, color = smoker)) +
+  geom_point(alpha = 0.5) +  # Добавляем точки с прозрачностью
+  geom_smooth(method = "lm", se = FALSE, aes(group = smoker)) +  # Добавляем линии тренда по группам
+  labs(title = "Зависимость стоимости страховки от bmi с разделением по курению", 
+       x = "BMI", 
+       y = "Стоимость страховки") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),  # Центрируем заголовок
+        axis.text.x = element_text(size = 14))  # Увеличиваем размер шрифта для оси X
+
+# Выводим график на экран
+print(scatter_plot_bmi__with_trend_smokers)
+```
+&nbsp;
+&nbsp;
+&nbsp;
+
+Задание №11.Самостоятельно задайте вопрос №1 к данным (вопрос должен быть про какую-то подвыборку данных). Ответьте на него построив график на подвыборке данных. График должен содержать все основные элементы оформления (название, подписи осей, тему и проч.). Аргументируйте выбор типа графика.
+
+*Вопрос №1. Как распределяются медицинские расходы среди некурящих и курящих людей в разных возрастных группах?*
+
+```{r}
+# Подготовка данных для графика
+insurance_cost$age_group <- cut(insurance_cost$age,
+                                breaks = c(18, 35, 55, Inf),
+                                labels = c("18-34", "35-54", "55+"),
+                                include.lowest = TRUE,
+                                right = FALSE)
+
+# Фильтрация данных, чтобы исключить NA значения
+insurance_cost <- insurance_cost[!is.na(insurance_cost$smoker),]
+
+# Построение графика
+p <- ggplot(insurance_cost, aes(x = age_group, y = charges, fill = smoker)) +
+  geom_boxplot(outlier.shape = NA) + # Убираем выбросы для наглядности
+  labs(title = "Расходы на здравоохранение в зависимости от курения и возрастной группы",
+       x = "Возрастная группа",
+       y = "Медицинские расходы",
+       fill = "Статус курения") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0))
+
+# Печать графика
+print(p)
+
+```
+
+Boxplot использовался для сравнения распределений медицинских расходов между курящими и некурящими людьми в разных возрастных группах.Обоснование типа графика:
+
+1. *Сравнение групп*: Boxplot удобен для сравнения нескольких групп. В вашем случае он позволяет сравнить медицинские расходы между курящими и некурящими в каждой возрастной категории, делая сравнение наглядным.
+
+2. *Сравнение медиан*: Boxplot показывает медианное значение расходов для каждой группы, что является надёжной мерой центральной тенденции.
+
+3. *Межквартильный размах*: "Ящики" отображают межквартильный размах, что даёт представление о концентрации распределения данных и вариабельности расходов внутри групп.
+
+4. *Выбросы*: "Усы" графика указывают на диапазон данных, исключая выбросы. Это даёт возможность увидеть, насколько расходы для некоторых отличаются от общей тенденции.
+
+
+---------------------------------------------------------------------------------------------------------------
+
+
+&nbsp;
+&nbsp;
+&nbsp;
+
+Задание №12.Самостоятельно задайте вопрос №2 к данным (вопрос должен быть про какую-то подвыборку данных). Ответьте на него построив график на подвыборке данных. График должен содержать все основные элементы оформления (название, подписи осей, тему и проч.). Аргументируйте выбор типа графика.
+
+*Вопрос №2: Как индекс массы тела (BMI) влияет на средние годовые медицинские расходы в подвыборке курящих и некурящих людей в каждом возрасте?*
+
+Обоснование типа графика: точечный график позволит нам увидеть распределение индивидуальных значений медицинских расходов в зависимости от BMI для каждой подгруппы (курящие/некурящие), а линейный график поможет визуализировать общую тенденцию среди этих значений.
+
+```{r}
+library(dplyr)
+
+insurance_cost <- insurance_cost %>%
+  mutate(age_group = cut(age, breaks=c(18, 35, 50, 65, 100), 
+                         labels=c("18-34", "35-49", "50-64", "65+"), 
+                         include.lowest=TRUE))
+
+# Теперь построим график
+ggplot(insurance_cost, aes(x=bmi, y=charges, color=smoker)) + 
+  geom_point(alpha=0.5) + 
+  geom_smooth(aes(group=smoker), method="lm", se=FALSE) + # Линии тренда без доверительных интервалов
+  facet_wrap(~age_group) + # Разделяем график по возрастным группам
+  labs(title="Влияние BMI на средние годовые медицинские расходы среди курящих и некурящих",
+       x="Индекс массы тела (BMI)",
+       y="Средние годовые медицинские расходы",
+       color="Статус курения") +
+  theme_minimal()
+
+```
+Тип графика точечный с линиями тренда позволяет наглядно сравнить две группы по нескольким возрастным категориям, а также показать разницу в влиянии BMI на медицинские расходы между курящими и некурящими.
+
+&nbsp;
+&nbsp;
+&nbsp;
+
+
+
+
+
+Задание №13.Самостоятельно задайте вопрос №3 к данным (вопрос должен быть про какую-то подвыборку данных). Ответьте на него построив график на подвыборке данных. График должен содержать все основные элементы оформления (название, подписи осей, тему и проч.). Аргументируйте выбор типа графика.
+
+
+*Вопрос №3. Каково соотношение средних годовых медицинских расходов между мужчинами и женщинами в разных возрастных категориях?*
+
+Обоснование типа графика: этот тип графика позволит наглядно сравнить расходы между двумя полами в разных возрастных группах.
+
+```{r}
+
+insurance_cost <- insurance_cost %>%
+  mutate(age_group = cut(age, breaks=c(18, 35, 50, 65, 100), 
+                         labels=c("18-34", "35-49", "50-64", "65+"), 
+                         include.lowest=TRUE))
+
+# Рассчитываем средние расходы для каждой возрастной категории и пола
+average_costs_by_age <- insurance_cost %>%
+  group_by(age_group, sex) %>%
+  summarize(average_cost = mean(charges))
+
+# Строим график
+ggplot(average_costs_by_age, aes(x = age_group, y = average_cost, fill = sex)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  labs(title = "Cредние медицинские расходы мужчин и женщин по возрастным категориям",
+       x = "Возрастная категория",
+       y = "Средние медицинские расходы") +
+  scale_fill_brewer(palette = "Set1") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
