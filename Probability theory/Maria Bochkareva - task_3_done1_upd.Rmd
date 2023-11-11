@@ -1,0 +1,403 @@
+---
+title: "Task 4. HW"
+author: "Maria Bochkareva"
+date: "`r Sys.Date()`"
+output: html_document
+---
+&nbsp;
+
+&nbsp;
+
+&nbsp;
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(broom)
+
+```
+
+# Сравнение вероятностей наступления события в двухгрупповом исследовании
+
+## 1. Модель пациента
+
+```{r model}
+
+p_R <- 0.1 # Истинная вероятность выздоровления для референса (в ГЕНЕРАЛЬНОЙ СОВОКУПНОСТИ)
+p_T <- 0.2 # Истинная вероятность выздоровления для теста (в ГЕНЕРАЛЬНОЙ СОВОКУПНОСТИ)
+true_OR <- (p_T/(1-p_T))/(p_R/(1-p_R)) # Истинное отношение шансов
+
+```
+## 2. Генерация однократной выборки
+
+```{r one_sample}
+
+sample_size <- 100 # Количество пациентов в каждой из групп
+df_trial <- data.frame(
+  arm = rep(c('R', 'T'), each = sample_size),
+  patient_ID = rep(1:sample_size, 2),
+  recovery_status = c(sample(c(1,0), sample_size, replace = TRUE, prob = c(p_R, 1 - p_R)),
+                      sample(c(1,0), sample_size, replace = TRUE, prob = c(p_T, 1 - p_T)))
+)
+
+```
+## 3. Построение ДИ для разницы вероятностей
+
+```{r diff}
+
+df_prop <- df_trial %>% 
+  group_by(arm) %>% # Группировка по типу интервенции (тест/референс)
+  dplyr::summarise(x = sum(recovery_status), # Подсчет числа положительных исходов
+                   n = n()) %>% # Подсчет общего числа пациентов в группе
+  ungroup() %>% 
+  dplyr::summarise(X = list(x), N = list(n)) %>% # Соединение все x и n в отдельные вектора
+  rowwise() %>% 
+  mutate(tst = list(broom::tidy(prop.test(X, N)))) %>% # Вычисление ДИ на разницу пропорций
+  unnest(tst) %>% # Раскладка результатов prop.test по столбцам 
+  mutate(catch = ifelse(conf.low < p_R-p_T & p_R-p_T < conf.high, "Catch", "Miss"))
+  
+print(df_prop)
+
+```
+&nbsp;
+
+&nbsp;
+
+&nbsp;
+## ЗАДАНИЕ №1
+
+- Повторить этот эксперимент 1000 раз, каждый раз фиксируя факт накрытия истинной разницы в вероятностях (p_R-p_T): 
+
+```{r}
+
+count_catch <- 0 #Устанавливаем начальное значение счетчика
+num_simulations <- 1000 #Количество повторений эксперимента
+
+#Генерация однократной выборки 
+
+for (i in 1:num_simulations) {
+  sample_size <- 100
+  df_trial <- data.frame(
+    arm = rep(c('R', 'T'), each = sample_size),
+    patient_ID = rep(1:sample_size, 2),
+    recovery_status = c(sample(c(1, 0), sample_size, replace = TRUE, prob = c(p_R, 1 - p_R)),
+                        sample(c(1, 0), sample_size, replace = TRUE, prob = c(p_T, 1 - p_T)))
+  )
+  
+#Построение ДИ для разницы вероятностей
+  
+  df_prop <- df_trial %>%
+    group_by(arm) %>%
+    dplyr::summarise(x = sum(recovery_status),
+                     n = n()) %>%
+    ungroup() %>%
+    dplyr::summarise(X = list(x), N = list(n)) %>%
+    rowwise() %>%
+    mutate(tst = list(broom::tidy(prop.test(X, N)))) %>%
+    unnest(tst) %>%
+    mutate(catch = ifelse(conf.low < p_R - p_T & p_R - p_T < conf.high, "Catch", "Miss"))
+  
+#Проверка, попадает ли разница в заданный диапазон
+  
+  if ("Catch" %in% df_prop$catch) {
+    count_catch <- count_catch + 1
+  }
+}
+
+#Вывод результатов
+
+cat("Количество раз, когда разница попала в заданный диапазон:", count_catch, "\n")
+cat("Доля успешных экспериментов:", count_catch / num_simulations, "\n")
+```
+
+- Оценить полученную вероятность накрытия с заданной по умолчанию (0.95):
+```{r}
+#Заданная вероятность накрытия
+
+expected_coverage <- 0.95
+
+#Расчет полученной вероятности накрытия
+
+observed_coverage <- count_catch / num_simulations
+
+#Вывод результатов
+
+cat("Ожидаемая вероятность накрытия:", expected_coverage, "\n")
+cat("Полученная вероятность накрытия:", observed_coverage, "\n")
+cat("Разница:", abs(expected_coverage - observed_coverage), "\n")
+
+```
+
+
+- Построить гистограмму точечной оценки разницы вероятностей (estimate1-estimae2) и подумать о ее распределении: 
+```{r}
+
+difference_estimates <- numeric(num_simulations) #Создание вектора для хранения оценок разницы вероятностей
+
+for (i in 1:num_simulations) {
+  #Генерация однократной выборки
+  sample_size <- 100
+  df_trial <- data.frame(
+    arm = rep(c('R', 'T'), each = sample_size),
+    patient_ID = rep(1:sample_size, 2),
+    recovery_status = c(sample(c(1, 0), sample_size, replace = TRUE, prob = c(p_R, 1 - p_R)),
+                        sample(c(1, 0), sample_size, replace = TRUE, prob = c(p_T, 1 - p_T)))
+  )
+  
+  # Построение ДИ для разницы вероятностей
+  
+  df_prop <- df_trial %>%
+    group_by(arm) %>%
+    dplyr::summarise(x = sum(recovery_status),
+                     n = n())
+  
+  # Вычисление оценки разницы вероятностей
+  
+  estimate1 <- df_prop$x[df_prop$arm == "R"] / df_prop$n[df_prop$arm == "R"]
+  estimate2 <- df_prop$x[df_prop$arm == "T"] / df_prop$n[df_prop$arm == "T"]
+  difference_estimates[i] <- estimate1 - estimate2
+}
+
+# Построение гистограммы оценок разницы вероятностей
+
+hist(difference_estimates, main = "Гистограмма оценок разницы вероятностей", xlab = "Оценка разницы вероятностей")
+
+
+```
+Характеристики распределения:
+Распределение центрировано около значения -0.1, размах от -0.25 до 0.05, одномодально. Распределение кажется симметричным относительно своего центра. Форма распределения напоминает нормальное распределение. 
+
+
+- Проверить, корректно ли работает методика построения ДИ, реализованная в prop.test, при различных значениях p_R и p_T: 
+
+```{r, warning=FALSE}
+# Функция для проверки покрытия истинных вероятностей ДИ
+check_coverage <- function(p_R, p_T, num_simulations) {
+  count_catch <- 0 # счетчик попаданий истинного значения в ДИ
+  
+  for (i in 1:num_simulations) {
+    # Генерация выборки
+    sample_size <- 100
+    df_trial <- data.frame(
+      arm = rep(c('R', 'T'), each = sample_size),
+      patient_ID = rep(1:sample_size, 2),
+      recovery_status = c(sample(c(1, 0), sample_size, replace = TRUE, prob = c(p_R, 1 - p_R)),
+                          sample(c(1, 0), sample_size, replace = TRUE, prob = c(p_T, 1 - p_T)))
+    )
+    
+    # Построение ДИ для разницы вероятностей
+    df_prop <- df_trial %>%
+      group_by(arm) %>%
+      summarise(x = sum(recovery_status), n = n()) %>%
+      ungroup() %>%
+      summarise(X = list(x), N = list(n)) %>%
+      rowwise() %>%
+      mutate(tst = list(broom::tidy(prop.test(X, N)))) %>%
+      unnest(tst) %>%
+      mutate(catch = ifelse(conf.low < p_R - p_T & p_R - p_T < conf.high, TRUE, FALSE))
+    
+    # Обновление счетчика
+    if (any(df_prop$catch)) {
+      count_catch <- count_catch + 1
+    }
+  }
+  
+  # Возвращаем долю попаданий
+  return(count_catch / num_simulations)
+}
+
+# Тестируем различные значения p_R и p_T
+set.seed(123) # Для воспроизводимости результатов
+p_values <- seq(0.0, 1.0, by = 0.1)
+coverage_results <- outer(p_values, p_values, Vectorize(check_coverage, vectorize.args = c("p_R", "p_T")), num_simulations = 50)
+
+# Смотрим результаты
+print(coverage_results)
+
+```
+
+Эти результаты показывают долю случаев, когда истинная разница вероятностей попадала в доверительный интервал, построенный с помощью prop.test для 50 симуляций на каждую пару значений.
+
+Общий вывод: prop.test может быть надежным для большинства значений пропорций, но в крайних случаях (особенно когда пропорции равны 0 или 1, расположенные по краям полученной матрицы) его использование может быть некорректным, и следует рассмотреть альтернативные методы.
+
+## 4. Построение ДИ для отношения шансов
+
+```{r}
+df_OR <- df_trial %>%
+  dplyr::summarise(broom::tidy(fisher.test(table(.$arm, .$recovery_status)))) %>% 
+  mutate(catch = ifelse(conf.low < true_OR & true_OR < conf.high, "Catch", "Miss"))
+
+print(df_OR)
+```
+&nbsp;
+
+&nbsp;
+
+&nbsp;
+## ЗАДАНИЕ №2
+
+- Повторить этот эксперимент 1000 раз, каждый раз фиксируя факт накрытия истинного отношения шансов (true_OR):
+
+```{r}
+
+count_catch_OR <- 0  #Устанавливаем начальное значение счетчика
+num_simulations <- 1000 #Количество повторений эксперимента
+
+#Генерация однократной выборки 
+
+for (i in 1:num_simulations) {
+  sample_size <- 100
+  df_trial <- data.frame(
+    arm = rep(c('R', 'T'), each = sample_size),
+    patient_ID = rep(1:sample_size, 2),
+    recovery_status = c(sample(c(1, 0), sample_size, replace = TRUE, prob = c(p_R, 1 - p_R)),
+                        sample(c(1, 0), sample_size, replace = TRUE, prob = c(p_T, 1 - p_T)))
+  )
+  
+#Построение ДИ для отношения шансов
+  
+  df_OR <- df_trial %>%
+    dplyr::summarise(broom::tidy(fisher.test(table(.$arm, .$recovery_status)))) %>% 
+    mutate(catch = ifelse(conf.low < true_OR & true_OR < conf.high, "Catch", "Miss"))
+  
+  #Проверка, попадает ли отношение шансов в заданный диапазон
+  
+  if ("Catch" %in% df_OR$catch) {
+    count_catch_OR <- count_catch_OR + 1
+  }
+}
+
+#Вывод результатов
+
+cat("Количество раз, когда отношение шансов попало в заданный диапазон:", count_catch_OR, "\n")
+cat("Доля успешных экспериментов для отношения шансов:", count_catch_OR / num_simulations, "\n")
+
+```
+
+- Оценить полученную вероятность накрытия с заданной по умолчанию (0.95).
+
+```{r}
+
+observed_coverage <- count_catch_OR / num_simulations #оценка полученной вероятности накрытия
+expected_coverage <- 0.95 #заданная вероятность накрытия
+
+#Вывод результатов
+
+cat("Ожидаемая вероятность накрытия: ", expected_coverage, "\n")
+cat("Наблюдаемая вероятность накрытия: ", observed_coverage, "\n")
+cat("Разница между наблюдаемой и ожидаемой вероятностью накрытия: ", abs(observed_coverage - expected_coverage), "\n")
+
+```
+
+
+- Построить гистограмму точечной оценки отношения шансов (estimate) и подумать о ее распределении: 
+
+```{r}
+
+or_estimates <- numeric(num_simulations)
+
+#Генерация однократной выборки и сохранение точечной оценки отношения шансов 
+
+for (i in 1:num_simulations) {
+  sample_size <- 100
+  df_trial <- data.frame(
+    arm = rep(c('R', 'T'), each = sample_size),
+    patient_ID = rep(1:sample_size, 2),
+    recovery_status = c(sample(c(1, 0), sample_size, replace = TRUE, prob = c(p_R, 1 - p_R)),
+                        sample(c(1, 0), sample_size, replace = TRUE, prob = c(p_T, 1 - p_T)))
+  )
+  
+  #Вычисление и сохранение точечной оценки отношения шансов
+  
+  df_OR <- df_trial %>%
+    dplyr::summarise(broom::tidy(fisher.test(table(.$arm, .$recovery_status))))
+  
+  or_estimates[i] <- df_OR$estimate
+}
+
+#Построение гистограммы
+
+hist(or_estimates, main="Histogram of OR Estimates", xlab="Odds Ratio", breaks=30)
+```
+
+
+Гистограмма точечных оценок отношения шансов имеет положительную асимметрию, что видно по длинному хвосту, тянущемуся вправо. Большинство оценок сосредоточены в левой части гистограммы, но есть некоторое количество значительно больших оценок, которые создают длинный хвост.Мода соответствует значению OR = 2. Есть значительный разброс в оценках отношения шансов, отраженный в ширине основания гистограммы.
+
+
+- Проверить, корректно ли работает методика построения ДИ, реализованная в fisher.test, при различных значениях p_R и p_T
+
+```{r}
+check_coverage_OR <- function(p_R, p_T, num_simulations) {
+  count_catch <- 0 # счетчик попаданий истинного значения в ДИ
+  true_OR <- (p_T / (1 - p_T)) / (p_R / (1 - p_R)) # истинное отношение шансов
+  
+  for (i in 1:num_simulations) {
+    # генерация выборки
+    sample_size <- 100
+    df_trial <- data.frame(
+      arm = rep(c('R', 'T'), each = sample_size),
+      recovery_status = c(sample(c(1, 0), sample_size, replace = TRUE, prob = c(p_R, 1 - p_R)),
+                          sample(c(1, 0), sample_size, replace = TRUE, prob = c(p_T, 1 - p_T)))
+    )
+    
+    # Проверяем, есть ли в каждой группе как минимум одно событие и одно несобытие
+    
+    if (all(df_trial$recovery_status[df_trial$arm == 'R'] == 0) || all(df_trial$recovery_status[df_trial$arm == 'R'] == 1) ||
+        all(df_trial$recovery_status[df_trial$arm == 'T'] == 0) || all(df_trial$recovery_status[df_trial$arm == 'T'] == 1)) {
+      next # Пропускаем итерацию, если условие не выполняется
+    }
+    
+    # Если данные подходят, выполняем тест Фишера
+    test_result <- fisher.test(table(df_trial$arm, df_trial$recovery_status))
+    
+    # Проверяем, попадает ли истинное OR в построенный ДИ
+    if (test_result$conf.int[1] < true_OR && true_OR < test_result$conf.int[2]) {
+      count_catch <- count_catch + 1
+    }
+  }
+  
+  # Возвращаем долю попаданий
+  return(count_catch / num_simulations)
+}
+
+# Задаем различные значения p_R и p_T
+p_values <- seq(0.0, 1.0, by = 0.1)
+num_simulations <- 100
+
+
+# Создаем матрицу для результатов
+coverage_matrix <- matrix(nrow = length(p_values), ncol = length(p_values))
+
+# Заполняем матрицу результатами покрытия
+for (i in 1:length(p_values)) {
+  for (j in 1:length(p_values)) {
+    coverage_matrix[i, j] <- check_coverage_OR(p_values[i], p_values[j], num_simulations)
+  }
+}
+
+# Преобразуем матрицу в датафрейм для наглядности
+coverage_df <- expand.grid(p_R = p_values, p_T = p_values)
+coverage_df$Coverage <- as.vector(coverage_matrix)
+
+# Выводим датафрейм с результатами
+print(coverage_df)
+
+```
+Отлично, в результатах есть покрытие, равное нуля.Посмотрим где это происходит: 
+
+```{r}
+
+# Создаем график
+ggplot(coverage_df, aes(x = p_R, y = p_T, fill = Coverage)) +
+  geom_tile() + 
+  scale_fill_gradient(low = "blue", high = "red") +
+  labs(title = "Coverage Probability of True OR by fisher.test",
+       x = "p_R (Probability of recovery in reference group)",
+       y = "p_T (Probability of recovery in test group)",
+       fill = "Coverage") +
+  theme_minimal() + # Используем минималистичную тему
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+В угловых областях тепловой карты, где значения p_R или p_T равны 0 или 1, наблюдается низкая вероятность покрытия (синий цвет). Это означает, что когда вероятность выздоровления в одной из групп очень низкая или очень высокая, доверительные интервалы, вычисленные с помощью теста Фишера, реже содержат истинное значение OR.
