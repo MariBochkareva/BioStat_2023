@@ -3,6 +3,7 @@ title: "The Specifics of Medical Data Analysis. HW1"
 author: "Maria Bochkareva"
 date: "2023-11-11"
 output: html_document
+---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
