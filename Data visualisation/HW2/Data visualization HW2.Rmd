@@ -367,7 +367,7 @@ biplotly
 
 Так бы я вывела 2 графика для сравнения, если бы смогла решить проблему с continent:
 
-```{r}
+```{r, eval = FALSE}
 library(umap)
 
 #UMAP
