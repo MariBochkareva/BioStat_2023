@@ -271,7 +271,7 @@ fviz_pca_var(life_expectancy_pca, col.var = "contrib")
 
 №8 Постройте biplot график для PCA. Раскрасьте его по значениям континентов.Переведите его в `plotly`. Желательно, чтобы при наведении на точку, вы могли видеть название страны.
 
-*дальше будет несколько попыток совместить все тебования в одном графике, пока это не получилось совместить*
+*дальше будет несколько попыток совместить все тебования в одном графике, пока не получилось совместить*
 
 ```{r}
 
@@ -284,23 +284,8 @@ ggbiplot(life_expectancy_pca,
 
 ```
 
-```{r}
 
-data <- life_expectancy_data %>%
-  filter(!is.na(continent))  # Фильтрация строк с недостающими значениями континента
-
-# Создайте PCA
-pca <- prcomp(data[, -(1:3)], scale = TRUE)
-
-ggbiplot(pca, 
-         scale = 0, 
-         groups = data$continent,  # Раскраска по континентам
-         ellipse = TRUE,
-         alpha = 0.2) +
-  theme_minimal()
-
-```
-
+Здесь не получилось изменить numeric формат континентов из-за разницы длинны векторов при таком подходе:
    
 ```{r}
 
@@ -341,30 +326,75 @@ ggbiplot(pca,
   theme_minimal()
 
 ```
+
+
+Меняем подход:
 ```{r}
+# Выбераем только числовые переменные для анализа PCA
+numeric_data <- life_expectancy_data[, c("Life expectancy", "Unemployment", 
+                                         "Infant Mortality", "GDP","GNI",
+                                        "Clean fuels and cooking technologies", "Per Capita", 
+                                    "Mortality caused by road traffic injury", "Tuberculosis Incidence", 
+                                       "DPT Immunization", "HepB3 Immunization", "Measles Immunization", 
+                                 "Hospital beds", "Basic sanitation services", "Tuberculosis treatment", 
+                                   "Urban population", "Rural population", "Non-communicable Mortality", 
+                                         "Sucide Rate")]
+
+# PCA
+pca_result <- prcomp(numeric_data, scale. = TRUE)
+
+# Дадафрейм данных с результатами PCA и названиями стран
+pca_df <- data.frame(PC1 = pca_result$x[, 1], PC2 = pca_result$x[, 2], Country = life_expectancy_data$Country)
+
+# Добавляем информацию о континентах к датафрейму данных
+pca_df <- cbind(pca_df, Continent = life_expectancy_data$continent)
+
+# Конвертируем в plotly
+biplotly <- plot_ly(pca_df, x = ~PC1, y = ~PC2, text = ~Country, color = ~Continent) %>%
+  add_markers() %>%
+  layout(title = "Biplot график для PCA с раскраской по континентам",
+         xaxis = list(title = "Главная компонента 1"),
+         yaxis = list(title = "Главная компонента 2"),
+         hovermode = "closest")
+
+biplotly
 
 ```
 
 
+
+№10. Сравните результаты отображения точек между алгоритмами PCA и UMAP.
+
+Так бы я вывела 2 графика для сравнения, если бы смогла решить проблему с continent:
+
 ```{r}
+library(umap)
 
-# Создание biplot с использованием fviz_pca_biplot
-pca_biplot <- fviz_pca_biplot(life_expectancy_pca,
-                               geom = c("point", "text"),
-                               col.ind = life_expectancy_data$continent, # Раскраска по континентам
-                               labelsize = 3,
-                               addEllipses = TRUE) + 
-  theme(legend.position = "right")
+#UMAP
+umap_result <- umap(numeric_data, n_neighbors = 10, n_components = 2, metric = "euclidean")
 
-# Добавление названий стран для всплывающих подсказок
-pca_biplot$data$Country <- life_expectancy_data$Country
+# Датафрейм с результатами UMAP и названиями стран
+umap_df <- data.frame(UMAP1 = umap_result$layout[, 1], UMAP2 = umap_result$layout[, 2], Country = life_expectancy_data$Country)
 
-# Преобразование в plotly
-pca_plotly <- ggplotly(pca_biplot, tooltip = "Country")
+# biplot для PCA
+pca_plot <- ggplot(pca_df, aes(x = PC1, y = PC2, text = Country, color = Continent)) +
+  geom_point() +
+  labs(title = "Biplot график для PCA",
+       x = "Главная компонента 1", y = "Главная компонента 2") +
+  theme_minimal()
 
-# Вывод графика
+# scatter plot для UMAP
+umap_plot <- ggplot(umap_df, aes(x = UMAP1, y = UMAP2, text = Country, color = Continent)) +
+  geom_point() +
+  labs(title = "Scatter plot для UMAP",
+       x = "UMAP 1", y = "UMAP 2") +
+  theme_minimal()
+
+# ggplotly
+pca_plotly <- ggplotly(pca_plot)
+umap_plotly <- ggplotly(umap_plot)
+
 pca_plotly
-
+umap_plotly
 ```
-
 
