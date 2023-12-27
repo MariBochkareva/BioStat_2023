@@ -1,0 +1,304 @@
+---
+title: "The Specifics of Medical Data Analysis. HW1"
+author: "Maria Bochkareva"
+date: "2023-11-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Загрузка библиотек
+
+```{r, warning = FALSE, message = FALSE}
+
+library(readxl)
+library(pROC)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(purrr)
+
+```
+
+Загрузка датасета
+
+```{r, message = F}
+
+trauma_data <- read_excel("trauma.xlsx") # Чтение файла Excel
+
+head(trauma_data) # Просмотр первых строк данных
+
+```
+
+Вывод описательных статистик для всех переменных
+```{r}
+
+summary(trauma_data)
+
+```
+
+Скорректируем переменные: 
+
+```{r}
+# Преобразование id, Death и Sex в факторные переменные
+trauma_data$id <- as.factor(trauma_data$id)
+trauma_data$Death <- as.factor(trauma_data$Death)
+trauma_data$Sex <- as.factor(trauma_data$Sex)
+
+# Удаление символа дюймов (") и преобразование в числовой формат
+trauma_data$Height <- as.numeric(gsub("\"", "", trauma_data$Height))
+
+# Перевод из дюймов в метры
+trauma_data$Height <- trauma_data$Height * 0.0254
+
+# Проверка изменений
+trauma_data %>% summary()
+
+# Перевод массы тела из фунтов в килограммы
+trauma_data$Weight <- trauma_data$Weight * 0.453592
+
+# Проверка результатов
+summary(trauma_data$Weight)
+
+```
+
+Уберем пропущенные значения из данных, записанные как "0".
+
+Они присутствуют в столбце FOUR, но это возможное значение, исходя из мед данных - это кома III. 
+В данных Hb заменяем нули на NA т.к. нет промежуточных значений в диапазоне от 0 до 9.4, и исходя из этого, вероятно, это невозможное значение гемоглобина = пропущенные данные.
+
+```{r}
+
+# Создание копии датафрейма
+trauma_data_cleaned <- trauma_data
+
+# Замена нулевых значений Hb на NA в копии
+trauma_data_cleaned$Hb <- ifelse(trauma_data_cleaned$Hb == 0, NA, trauma_data_cleaned$Hb)
+
+# Проверка результатов в новом датафрейме
+summary(trauma_data_cleaned$Hb)
+
+```
+&nbsp;
+
+&nbsp;
+
+&nbsp;
+
+## *1. Дайте описательную статистику для переменных, включённых в датасет. Дополнительно  рассчитайте, у какого количества пациентов и в каком проценте случаев у пациентов был снижен уровень гемоглобина? Используйте следующие референтные значения (Мужчины:  13.5–16 г/дл, Женщины: 12–14 г/дл).*
+
+# Описательные статистики почищенных данных:
+```{r}
+
+summary(trauma_data_cleaned)
+
+```
+# Расчеты по уровню гемоглобина: 
+
+```{r}
+
+# Определение количества пациентов с сниженным уровнем гемоглобина
+low_hb_men <- sum(trauma_data_cleaned$Sex == "Male" & trauma_data_cleaned$Hb < 13.5, na.rm = TRUE)
+low_hb_women <- sum(trauma_data_cleaned$Sex == "Female" & trauma_data_cleaned$Hb < 12, na.rm = TRUE)
+total_low_hb <- low_hb_men + low_hb_women
+
+# Подсчет общего количества пациентов без NA
+total_patients <- sum(complete.cases(trauma_data_cleaned))
+
+# Расчет процента пациентов с сниженным уровнем гемоглобина
+percent_low_hb <- round((total_low_hb / total_patients) * 100, 1)
+
+# Вывод результатов
+cat("Количество пациентов с сниженным уровнем гемоглобина:", total_low_hb, "\n")
+cat("Процент пациентов с сниженным уровнем гемоглобина:", percent_low_hb, "%\n")
+
+```
+*Количество пациентов с сниженным уровнем гемоглобина: 458*
+
+*Процент пациентов с сниженным уровнем гемоглобина: 45.4 %*
+
+&nbsp;
+
+&nbsp;
+
+&nbsp;
+
+## *2. Рассчитайте индекс массы тела у пациентов (кг/м2). Каков был средний (M (SD)) уровень  ИМТ у пациентов, включённых в исследование? Какая доля пациентов имела ожирение (ИМТ  > 30)?*
+
+# Расчет ИМТ
+
+```{r}
+# Расчет ИМТ
+trauma_data_cleaned$BMI <- trauma_data_cleaned$Weight / (trauma_data_cleaned$Height^2)
+
+# Проверка результатов
+head(trauma_data_cleaned$BMI)
+```
+
+# Средний уровень ИМТ и его стандартное отклонение (SD):
+
+```{r}
+mean_BMI <- mean(trauma_data_cleaned$BMI, na.rm = TRUE)
+sd_BMI <- sd(trauma_data_cleaned$BMI, na.rm = TRUE)
+
+# Вывод среднего ИМТ и SD
+cat("Средний ИМТ:", mean_BMI, "\n")
+cat("Стандартное отклонение ИМТ:", sd_BMI, "\n")
+```
+*Средний ИМТ: 26.00361*
+
+*Стандартное отклонение ИМТ: 2.566121*
+
+# Ожирение определяется как ИМТ больше 30. Рассчитаем долю таких пациентов: 
+
+```{r}
+obesity_count <- sum(trauma_data_cleaned$BMI > 30, na.rm = TRUE)
+obesity_percentage <- round((obesity_count / nrow(trauma_data_cleaned)) * 100, 1)
+
+# Вывод доли пациентов с ожирением
+cat("Доля пациентов с ожирением:", obesity_percentage, "%\n")
+```
+*Доля пациентов с ожирением: 6.7 %*
+
+&nbsp;
+
+&nbsp;
+
+&nbsp;
+
+## *3. Как выглядит ROC-кривая для предсказания летального исхода в течение 24 часов по  переменной, характеризующей уровень гемоглобина? Постройте график. Чем может быть  обусловлена такая форма кривой?*
+
+Посчитаем площадь под кривой AUC:
+
+```{r}
+roc_Hb <- roc(trauma_data_cleaned$Death, trauma_data_cleaned$Hb, na.rm = TRUE, ci = T)
+
+cat("AUC (Area Under Curve):", auc(roc_Hb), "\n")
+```
+*Площадь под кривой AUC: 0.7077702*
+
+Построим ROC-кривую:
+
+```{r, fig.height=3, fig.width=3, dpi=300}
+roc_Hb %>% 
+    ggroc() +
+  geom_abline(slope = 1, intercept = 1, color = "grey") +
+  theme_bw() +
+    ggtitle("ROC-кривая летального исхода в течение 24 часов по Hb") +
+  theme_bw() +
+  theme(plot.title = element_text(size = 6))
+
+```
+Форма и расположение ROC-кривой над линией случайности говорит о том, что уровень гемоглобина имеет прогностическую ценность, однако довольно низкую. AUC = 0.71 подтверждает данное предположение, основанное на визуальной оценке графика.
+
+Такая форма кривой может быть обусловлена несколькими факторами:
+
+Специфичность и чувствительность переменной: уровень гемоглобина, возможно, сам по себе не является идеальным предиктором летальности, но в комбинации с другими факторами может улучшить способность модели предсказывать риск.
+
+Выборка данных: в выборке могут быть неравномерные распределения летальных исходов, что влияет на форму ROC-кривой.
+
+"2 горба" обусловлены бимодальностью распределения гемоглобина по полу. 
+
+&nbsp;
+
+&nbsp;
+
+&nbsp;
+
+## *4. Чему равна площадь под ROC-кривой, которую вы построили в вопросе 3? Чему равен 95%  двусторонний ДИ для площади под ROC-кривой, которую вы построили в вопросе 3?*
+
+```{r}
+auc_value <- auc(roc_Hb)
+auc_confidence <- ci(roc_Hb, conf.level = 0.95)
+
+# Вывод AUC и 95% доверительного интервала
+cat("AUC (Площадь под кривой):", auc_value, "\n")
+cat("95% ДИ для AUC: [", 
+    round(auc_confidence[1], 3), 
+    "-", 
+    round(auc_confidence[3], 3), 
+    "]\n")
+```
+
+*AUC (Площадь под кривой): 0.7077702*
+
+*95% ДИ для AUC: [ 0.676 - 0.739 ]*
+
+&nbsp;
+
+&nbsp;
+
+&nbsp;
+
+## *5. Проведите ROC-анализ и определите, какое пороговое значение является оптимальным для  предсказания летального исхода в течение 24 часов по шкале комы Глазго. Какой  чувствительностью и специфичностью обладает данный порог?*
+
+Вычисление ROC-кривой для шкалы комы Глазго
+```{r}
+roc_gcs <- roc(trauma_data_cleaned$Death, trauma_data_cleaned$GSC, na.rm = TRUE)
+```
+
+Это не обязательно, но для наглядности построим ROC кривую:
+
+```{r, fig.height=3, fig.width=3, dpi=300}
+roc_gcs %>% 
+    ggroc() +
+  geom_abline(slope = 1, intercept = 1, color = "grey") +
+  theme_bw() +
+    ggtitle("ROC Curve for Glasgow Coma Scale Predicting 24-hour Mortality") +
+  theme_bw() +
+  theme(plot.title = element_text(size = 6))
+
+```
+
+
+
+```{r}
+# Нахождение оптимального порогового значения
+coords_gcs <- coords(roc_gcs, "best", ret="threshold")
+
+# Добавление чувствительности и специфичности для оптимального порога
+optimal_coords <- coords(roc_gcs, "best", ret=c("sensitivity", "specificity"))
+
+# Вывод оптимального порога, чувствительности и специфичности
+cat("Оптимальное пороговое значение шкалы комы Глазго для предсказания летального исхода:", coords_gcs[1, "threshold"], "\n")
+cat("Чувствительность при этом пороге:", optimal_coords[1, "sensitivity"], "\n")
+cat("Специфичность при этом пороге:", optimal_coords[1, "specificity"], "\n")
+
+```
+*Оптимальное пороговое значение шкалы комы Глазго для предсказания летального исхода: 7.5*
+
+*Чувствительность при этом пороге: 0.8557457*
+
+*Специфичность при этом пороге: 0.8081301*
+&nbsp;
+
+&nbsp;
+
+&nbsp;
+
+## *6. Какая из количественных переменных в датасете (включая рассчитанный вами ранее ИМТ) обладает наибольшей площадью под ROC-кривой? Как вы можете интерпретировать это  знание? Какая количественная переменная имеет наименьшую площадь?*
+
+```{r, message = FALSE}
+#Чтобы проверить Setting levels и Setting direction необходимо изменить F на T в message. Для наглядности убираем их из отчета
+
+result <- trauma_data_cleaned %>%
+  select(Death, Age, Height, Weight, SBP, DBP, FOUR, GSC, Hb, BMI) %>%
+  pivot_longer(cols = -Death, names_to = "variable", values_to = "value") %>%
+  group_by(variable) %>%
+  summarise(
+    ROC = list(roc(Death, value, ci = TRUE)),
+    AUC = map_dbl(ROC, ~ auc(.x)),
+    AUC_LCL = map_dbl(ROC, ~ .x$ci[1]),
+    AUC_UCL = map_dbl(ROC, ~ .x$ci[3])
+  ) %>%
+  select(variable, AUC, AUC_LCL, AUC_UCL) %>%
+  arrange(desc(AUC))
+
+print(result)
+```
+
+Наибольшая площадь под ROC-кривой (AUC) в данном наборе данных у переменной FOUR, которая имеет значение AUC 0.9336832. Это означает, что переменная FOUR является наиболее значимой с точки зрения способности различать две группы пациентов для предсказания летального исхода в течение 24 часов.
+
+Наименьшая площадь под ROC-кривой у переменной Height, со значением AUC 0.4815851. Это указывает на то, что переменная Height имеет минимальную диагностическую ценность в данной модели, и ее способность различать между двумя классами близка к случайной (AUC = 0.5 считается случайным угадыванием).
