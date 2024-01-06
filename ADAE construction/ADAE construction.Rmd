@@ -1,0 +1,1094 @@
+---
+title: "ADAE"
+author: "Maria Bochkareva"
+date: "2023-12-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+Загрузка библиотек:
+
+```{r}
+
+library(readxl)
+library(dplyr)
+
+```
+
+Загрузка данных:
+
+```{r}
+
+ADSL <- read_excel("data/ADSL.xlsx")
+AE_ADVERSEEVENTS <- read_excel("data/Тестовая БД для домашнего задания/AE_ADVERSEEVENTS.xlsx")
+SUPPAE_ADVERSEEVENTS <- read_excel("data/Тестовая БД для домашнего задания/SUPPAE_ADVERSEEVENTS.xlsx")
+terms_translation <- read_excel("data/Тестовая БД для домашнего задания/terms_translation.xlsx")
+
+```
+
+Начинаем сборку ADAE с данных из ADSL с фиксацией всех несоответствий "Codelist / Controlled Terms" в датасет errors.
+
+## Сборка данных из ADSL в ADAE
+
+Далее, в названии каждого пункта будет указан номер строки спецификации (Например, "str 1 - строка")
+
+# Str 2 - 5
+
+```{r}
+
+# Создаем датафрейм ADAE с таким же количеством строк, как и в ADSL
+ADAE <- data.frame(STUDYID = character(nrow(ADSL)))
+
+# Добавляем переменные STUDYID, SUBJID, USUBJID, SITEID из ADSL в ADAE
+ADAE$STUDYID <- as.character(ADSL$STUDYID)
+ADAE$SUBJID <- as.character(ADSL$SUBJID)
+ADAE$USUBJID <- as.character(ADSL$USUBJID)
+ADAE$SITEID <- as.character(ADSL$SITEID)
+
+```
+
+# Str 6 и инициализация датафрейма для данных, не соответствующих "Codelist / Controlled Terms"
+
+```{r}
+
+# Копирование переменной TRTSEQP из ADSL в ADAE
+ADAE$TRTSEQP <- ADSL$TRTSEQP
+
+# Инициализация датафрейма для данных, не соответствующих "Codelist / Controlled Terms"
+errors <- data.frame(SUBJID = character(), Variable = character(), Value = character(), stringsAsFactors = FALSE)
+
+# Проверка и добавление ошибок для TRTSEQP, включая NA
+errors_TRTSEQP <- ADAE %>%
+  mutate(Variable = "TRTSEQP",
+         Value = ifelse(is.na(TRTSEQP), "NA", as.character(TRTSEQP))) %>%
+  filter(!TRTSEQP %in% c("TR", "RT")) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_TRTSEQP)
+
+```
+
+# Str 7
+
+```{r}
+
+# Копирование переменной TRTSEQPN из ADSL в ADAE
+ADAE$TRTSEQPN <- ADSL$TRTSEQPN
+
+# Проверка и добавление ошибок для TRTSEQPN
+errors_TRTSEQPN <- ADAE %>%
+  mutate(Variable = "TRTSEQPN",
+         Value = ifelse(is.na(TRTSEQPN), "NA", as.character(TRTSEQPN))) %>%
+  filter(!TRTSEQPN %in% c(1, 2)) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_TRTSEQPN)
+
+```
+
+# Str 8 - 11
+
+```{r}
+
+# Копирование дат в ADAE
+ADAE$AP01SDT <- ADSL$AP01SDT
+ADAE$AP01EDT <- ADSL$AP01EDT
+ADAE$AP02SDT <- ADSL$AP02SDT
+ADAE$AP02EDT <- ADSL$AP02EDT
+
+# Проверка дат на соответствие формату и добавление ошибок
+date_variables <- c("AP01SDT", "AP01EDT", "AP02SDT", "AP02EDT")
+
+for (var in date_variables) {
+  # Добавление ошибок для каждой даты
+  errors_dates <- ADAE %>%
+    mutate(Variable = var,
+           Value = .[[var]],
+           Date_Converted = as.Date(.[[var]], format = "%d.%m.%Y")) %>%
+    filter(is.na(Date_Converted)) %>%
+    select(SUBJID, Variable, Value)
+
+  # Объединение ошибок
+  errors <- rbind(errors, errors_dates)
+}
+
+```
+
+
+Далее собираем данные из AE_ADVERSEEVENTS в промежуточный датасет с записыванием всех ошибок в соответствии с спецификацией. 
+Промежуточный датасет на данном этапе введен, т.к. сочетание SUBJID и AESEQ в AE_ADVERSEEVENTS не гарантирует уникального ключа строки.
+
+## Сборка данных из AE_ADVERSEEVENTS в промежуточный датасет с записыванием всех несоответствий "Codelist / Controlled Terms" в errors
+
+# Str 18 (Sequence Number)
+
+```{r}
+
+# Создание промежуточного датафрейма с переменной AESEQ
+intermediate_dataset <- AE_ADVERSEEVENTS %>%
+  mutate(AESEQ = as.numeric(AESEQ)) %>%
+  select(SUBJID, AESEQ)
+
+# Проверка и добавление ошибок для AESEQ
+errors_AESEQ <- intermediate_dataset %>%
+  mutate(Variable = "AESEQ",
+         Value = ifelse(is.na(AESEQ), "NA", as.character(AESEQ))) %>%
+  filter(is.na(AESEQ)) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AESEQ)
+
+```
+
+# Str 19 (Reported Term for the Adverse Event)
+
+! Несоответствие: по спецификации в AE_ADVERSEEVENTS должен быть столбец TERM, но имя этого столбца AETERM
+
+```{r}
+
+# Предполагая, что количество строк в intermediate_dataset и AE_ADVERSEEVENTS одинаково
+if (nrow(intermediate_dataset) == nrow(AE_ADVERSEEVENTS)) {
+  intermediate_dataset <- cbind(intermediate_dataset, AE_ADVERSEEVENTS[["AETERM"]])
+  names(intermediate_dataset)[names(intermediate_dataset) == "AE_ADVERSEEVENTS[[\"AETERM\"]]"] <- "AETERM"
+} else {
+  warning("Количество строк в intermediate_dataset и AE_ADVERSEEVENTS различается.")
+}
+
+# Проверка и добавление ошибок для AETERM в intermediate_dataset
+errors_AETERM <- intermediate_dataset %>%
+  mutate(Variable = "AETERM",
+         Value = ifelse(is.na(AETERM), "NA", AETERM)) %>%
+  filter(is.na(AETERM)) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AETERM)
+
+```
+
+
+# Str 21 (Dictionary-Derived Term)
+
+```{r}
+
+# Проверка на совпадение количества строк в intermediate_dataset и AE_ADVERSEEVENTS
+if (nrow(intermediate_dataset) == nrow(AE_ADVERSEEVENTS)) {
+  intermediate_dataset <- cbind(intermediate_dataset, AE_ADVERSEEVENTS[["AEDECOD"]])
+  names(intermediate_dataset)[names(intermediate_dataset) == "AE_ADVERSEEVENTS[[\"AEDECOD\"]]"] <- "AEDECOD"
+} else {
+  warning("Количество строк в intermediate_dataset и AE_ADVERSEEVENTS различается.")
+}
+
+# Проверка и добавление ошибок для AEDECOD в intermediate_dataset
+errors_AEDECOD <- intermediate_dataset %>%
+  mutate(Variable = "AEDECOD",
+         Value = ifelse(is.na(AEDECOD), "NA", AEDECOD)) %>%
+  filter(is.na(AEDECOD)) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AEDECOD)
+
+```
+
+# Str 22, 25 (Start Date/Time of Adverse Event, End Date/Time of Adverse Event)
+
+```{r}
+
+library(lubridate)
+
+# Проверка на совпадение количества строк в intermediate_dataset и AE_ADVERSEEVENTS
+if (nrow(intermediate_dataset) == nrow(AE_ADVERSEEVENTS)) {
+  intermediate_dataset <- cbind(intermediate_dataset, AE_ADVERSEEVENTS[c("AESTDTC", "AEENDTC")])
+  names(intermediate_dataset)[names(intermediate_dataset) == "AE_ADVERSEEVENTS[[\"AESTDTC\"]]"] <- "AESTDTC"
+  names(intermediate_dataset)[names(intermediate_dataset) == "AE_ADVERSEEVENTS[[\"AEENDTC\"]]"] <- "AEENDTC"
+} else {
+  warning("Количество строк в intermediate_dataset и AE_ADVERSEEVENTS различается.")
+}
+
+# Проверка и добавление ошибок для AESTDTC и AEENDTC в intermediate_dataset
+errors_AESTDTC <- intermediate_dataset %>%
+  mutate(Variable = "AESTDTC",
+         Value = ifelse(is.na(AESTDTC), "NA", AESTDTC),
+         Date_Converted = ymd(AESTDTC)) %>%
+  filter(is.na(Date_Converted)) %>%
+  select(SUBJID, Variable, Value)
+
+errors_AEENDTC <- intermediate_dataset %>%
+  mutate(Variable = "AEENDTC",
+         Value = ifelse(is.na(AEENDTC), "NA", AEENDTC),
+         Date_Converted = ymd(AEENDTC)) %>%
+  filter(is.na(Date_Converted)) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AESTDTC, errors_AEENDTC)
+
+```
+
+# Str 23, 26 (Analysis Start Date и Analysis End Date)
+
+```{r}
+
+# Проверка на совпадение количества строк
+if (nrow(intermediate_dataset) == nrow(AE_ADVERSEEVENTS)) {
+  # Добавление и преобразование ASTDT и AENDT в intermediate_dataset
+  intermediate_dataset$ASTDT <- AE_ADVERSEEVENTS$AESTDTC %>%
+    ymd() %>%
+    format("%d.%m.%Y")
+  intermediate_dataset$AENDT <- AE_ADVERSEEVENTS$AEENDTC %>%
+    ymd() %>%
+    format("%d.%m.%Y")
+} else {
+  warning("Количество строк в intermediate_dataset и AE_ADVERSEEVENTS различается.")
+}
+
+# Проверка и добавление ошибок для ASTDT и AENDT в intermediate_dataset
+errors_ASTDT <- intermediate_dataset %>%
+  mutate(Variable = "ASTDT",
+         Value = ifelse(is.na(ASTDT), "NA", ASTDT),
+         Date_Converted = dmy(ASTDT)) %>%
+  filter(is.na(Date_Converted)) %>%
+  select(SUBJID, Variable, Value)
+
+errors_AENDT <- intermediate_dataset %>%
+  mutate(Variable = "AENDT",
+         Value = ifelse(is.na(AENDT), "NA", AENDT),
+         Date_Converted = dmy(AENDT)) %>%
+  filter(is.na(Date_Converted)) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_ASTDT, errors_AENDT)
+
+```
+
+# Str 24, 27 (Analysis Start Date Imputation Flag и Analysis End Date Imputation Flag)
+
+```{r}
+
+library(stringr)
+
+# Добавление и вычисление ASTDTF и AENDTF в intermediate_dataset
+intermediate_dataset <- intermediate_dataset %>%
+  mutate(
+    ASTDTF = case_when(
+      is.na(ASTDT) | str_detect(ASTDT, "^\\d{2}.\\d{4}$") ~ "Y",    # Только день и год
+      str_detect(ASTDT, "^\\d{2}.\\d{2}.\\d{4}$") ~ "D",            # Полная дата
+      TRUE ~ "M"                                                    # Все остальные случаи
+    ),
+    AENDTF = case_when(
+      is.na(AENDT) | str_detect(AENDT, "^\\d{2}.\\d{4}$") ~ "Y",
+      str_detect(AENDT, "^\\d{2}.\\d{2}.\\d{4}$") ~ "D",
+      TRUE ~ "M"
+    )
+  )
+
+# Определение допустимых значений для флагов
+allowed_flags <- c("D", "M", "Y")
+
+# Проверка и добавление ошибок для ASTDTF
+errors_ASTDTF <- intermediate_dataset %>%
+  mutate(Variable = "ASTDTF",
+         Value = ifelse(is.na(ASTDTF), "NA", ASTDTF)) %>%
+  filter(!ASTDTF %in% allowed_flags) %>%
+  select(SUBJID, Variable, Value)
+
+# Проверка и добавление ошибок для AENDTF
+errors_AENDTF <- intermediate_dataset %>%
+  mutate(Variable = "AENDTF",
+         Value = ifelse(is.na(AENDTF), "NA", AENDTF)) %>%
+  filter(!AENDTF %in% allowed_flags) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_ASTDTF, errors_AENDTF)
+
+```
+
+
+# Str 28 (End Relative to Reference Time Point (End of study date))
+
+```{r}
+
+# Проверка на совпадение количества строк в intermediate_dataset и AE_ADVERSEEVENTS
+if (nrow(intermediate_dataset) == nrow(AE_ADVERSEEVENTS)) {
+  intermediate_dataset <- cbind(intermediate_dataset, AE_ADVERSEEVENTS[["AEENRTPT"]])
+  names(intermediate_dataset)[names(intermediate_dataset) == "AE_ADVERSEEVENTS[[\"AEENRTPT\"]]"] <- "AEENRTPT"
+} else {
+  warning("Количество строк в intermediate_dataset и AE_ADVERSEEVENTS различается.")
+}
+
+# Определение допустимых значений для AEENRTPT
+allowed_terms <- c("ONGOING", "BEFORE", "COINCIDENT", "AFTER", "U")
+
+# Проверка и добавление ошибок для AEENRTPT в intermediate_dataset
+errors_AEENRTPT <- intermediate_dataset %>%
+  mutate(Variable = "AEENRTPT",
+         Value = ifelse(is.na(AEENRTPT), "NA", AEENRTPT)) %>%
+  filter(!AEENRTPT %in% allowed_terms) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AEENRTPT)
+
+```
+
+# Str 29 (AE Ongoing Flag)
+
+```{r}
+
+# Добавление и вычисление AEENRF в intermediate_dataset
+intermediate_dataset <- intermediate_dataset %>%
+  mutate(
+    AEENRF = ifelse(AEENRTPT == "ONGOING", "ONGOING", NA_character_)
+  )
+
+# Проверка и добавление ошибок для AEENRF в intermediate_dataset
+errors_AEENRF <- intermediate_dataset %>%
+  mutate(Variable = "AEENRF",
+         Value = ifelse(is.na(AEENRF), "NA", AEENRF)) %>%
+  filter(!(is.na(AEENRF) | AEENRF == "ONGOING")) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AEENRF)
+
+```
+
+# Str 32 (Serious Event)
+
+```{r}
+
+# Добавление и вычисление AESER в intermediate_dataset
+intermediate_dataset <- intermediate_dataset %>%
+  mutate(
+    AESER = case_when(
+      AE_ADVERSEEVENTS$AESER == "Да" ~ "Y",
+      AE_ADVERSEEVENTS$AESER == "Нет" ~ "N",
+      TRUE ~ NA_character_  # Для всех остальных случаев
+    )
+  )
+
+# Определение допустимых значений для AESER
+allowed_aeser <- c("Y", "N")
+
+# Проверка и добавление ошибок для AESER в intermediate_dataset
+errors_AESER <- intermediate_dataset %>%
+  mutate(Variable = "AESER",
+         Value = ifelse(is.na(AESER), "NA", AESER)) %>%
+  filter(!AESER %in% allowed_aeser) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AESER)
+
+```
+
+# Str 34 (Analysis Severity/Intensity)
+
+!AESEV и ASEV - несоответствие названий спецификации
+```{r}
+
+# Определение допустимых значений для ASEV
+allowed_severities <- c("Легкая", "Средняя", "Тяжелая")
+
+# Проверка и добавление ошибок для ASEV в AE_ADVERSEEVENTS
+errors_ASEV <- AE_ADVERSEEVENTS %>%
+  mutate(Variable = "AESEV",
+         Value = ifelse(is.na(AESEV), "NA", AESEV)) %>%
+  filter(!AESEV %in% allowed_severities) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_ASEV)
+
+# Замена терминов в AE_ADVERSEEVENTS
+AE_ADVERSEEVENTS$AESEV <- recode(AE_ADVERSEEVENTS$AESEV,
+                                 "Легкое" = "Легкая",
+                                 "Среднее" = "Средняя",
+                                 "Тяжелое" = "Тяжелая")
+
+# Проверка на совпадение количества строк
+if (nrow(intermediate_dataset) == nrow(AE_ADVERSEEVENTS)) {
+  intermediate_dataset <- cbind(intermediate_dataset, AE_ADVERSEEVENTS[["AESEV"]])
+  names(intermediate_dataset)[names(intermediate_dataset) == "AE_ADVERSEEVENTS[[\"AESEV\"]]"] <- "AESEV"
+} else {
+  warning("Количество строк в intermediate_dataset и AE_ADVERSEEVENTS различается.")
+}
+
+```
+
+# Str 35 (Analysis Severity/Intensity (N))
+
+```{r}
+
+# Добавление и вычисление ASEVN в intermediate_dataset
+intermediate_dataset <- intermediate_dataset %>%
+  mutate(
+    ASEVN = case_when(
+      AESEV == "Легкая" ~ 1L,
+      AESEV == "Средняя" ~ 2L,
+      AESEV == "Тяжелая" ~ 3L,
+      TRUE ~ NA_integer_  # Для всех остальных случаев
+    )
+  )
+
+# Определение допустимых значений для ASEVN
+allowed_severity_levels <- c(1L, 2L, 3L)
+
+# Проверка и добавление ошибок для ASEVN в intermediate_dataset
+errors_ASEVN <- intermediate_dataset %>%
+  mutate(Variable = "ASEVN",
+         Value = ifelse(is.na(ASEVN), "NA", as.character(ASEVN))) %>%
+  filter(!(ASEVN %in% allowed_severity_levels | is.na(ASEVN))) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_ASEVN)
+
+```
+
+
+# Str 36 (Causality)
+
+```{r}
+
+# Проверка на совпадение количества строк в intermediate_dataset и AE_ADVERSEEVENTS
+if (nrow(intermediate_dataset) == nrow(AE_ADVERSEEVENTS)) {
+  intermediate_dataset <- cbind(intermediate_dataset, AE_ADVERSEEVENTS[["AEREL"]])
+  names(intermediate_dataset)[names(intermediate_dataset) == "AE_ADVERSEEVENTS[[\"AEREL\"]]"] <- "AEREL"
+} else {
+  warning("Количество строк в intermediate_dataset и AE_ADVERSEEVENTS различается.")
+}
+
+# Определение допустимых значений для AEREL
+allowed_relations <- c("Определенная", "Вероятная", "Возможная", "Сомнительная", "Условная", "Не классифицируемая", "Не связано")
+
+# Проверка и добавление ошибок для AEREL в intermediate_dataset
+errors_AEREL <- intermediate_dataset %>%
+  mutate(Variable = "AEREL",
+         Value = ifelse(is.na(AEREL), "NA", AEREL)) %>%
+  filter(!AEREL %in% allowed_relations) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AEREL)
+
+```
+
+# Str 37 (Causality (N))
+
+```{r}
+
+# Добавление и вычисление AERELN в intermediate_dataset
+intermediate_dataset <- intermediate_dataset %>%
+  mutate(
+    AERELN = case_when(
+      AEREL == "Определенная" ~ 1L,
+      AEREL == "Вероятная" ~ 2L,
+      AEREL == "Возможная" ~ 3L,
+      AEREL == "Сомнительная" ~ 4L,
+      AEREL == "Условная" ~ 5L,
+      AEREL == "Не классифицируемая" ~ 6L,
+      AEREL == "Не связано" ~ 7L,
+      TRUE ~ NA_integer_  # Для всех остальных случаев
+    )
+  )
+
+# Определение допустимых значений для AERELN
+allowed_relations <- 1:7
+
+# Проверка и добавление ошибок для AERELN в intermediate_dataset
+errors_AERELN <- intermediate_dataset %>%
+  mutate(Variable = "AERELN",
+         Value = ifelse(is.na(AERELN), "NA", as.character(AERELN))) %>%
+  filter(!(AERELN %in% allowed_relations | is.na(AERELN))) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AERELN)
+
+```
+
+# Str 38 (Pooled Causality Group 1)
+
+```{r}
+
+# Добавление и вычисление RELGR1 в intermediate_dataset
+intermediate_dataset <- intermediate_dataset %>%
+  mutate(
+    RELGR1 = case_when(
+      AEREL %in% c("Определенная", "Вероятная", "Возможная", "Сомнительная", "Условная") ~ "Связано",
+      is.na(AEREL) | AEREL == "Не классифицируемая" ~ NA_character_,
+      AEREL == "Не связано" ~ "Не связано",
+      TRUE ~ NA_character_  # Для всех остальных случаев
+    )
+  )
+
+# Проверка и добавление ошибок для RELGR1 в intermediate_dataset
+allowed_terms_RELGR1 <- c("Связано", "Не связано", NA_character_)
+
+errors_RELGR1 <- intermediate_dataset %>%
+  mutate(Variable = "RELGR1",
+         Value = ifelse(is.na(RELGR1), "NA", RELGR1)) %>%
+  filter(!(RELGR1 %in% allowed_terms_RELGR1)) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_RELGR1)
+
+```
+
+# Str 39 (Pooled Causality Group 1 (N))
+
+```{r}
+
+# Добавление и вычисление RELGR1N в intermediate_dataset
+intermediate_dataset <- intermediate_dataset %>%
+  mutate(
+    RELGR1N = case_when(
+      RELGR1 == "Не связано" ~ 0L,
+      RELGR1 == "Связано" ~ 1L,
+      is.na(RELGR1) | RELGR1 == "NA" ~ 2L,
+      TRUE ~ NA_integer_  # Для всех остальных случаев
+    )
+  )
+
+# Определение допустимых значений для RELGR1N
+allowed_relations_RELGR1N <- 0:2
+
+# Проверка и добавление ошибок для RELGR1N в intermediate_dataset
+errors_RELGR1N <- intermediate_dataset %>%
+  mutate(Variable = "RELGR1N",
+         Value = ifelse(is.na(RELGR1N), "NA", as.character(RELGR1N))) %>%
+  filter(!(RELGR1N %in% allowed_relations_RELGR1N | is.na(RELGR1N))) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_RELGR1N)
+
+```
+
+
+# Str 40 (Action Taken with Study Treatment)
+
+```{r}
+
+# Проверка на совпадение количества строк в intermediate_dataset и AE_ADVERSEEVENTS
+if (nrow(intermediate_dataset) == nrow(AE_ADVERSEEVENTS)) {
+  intermediate_dataset <- cbind(intermediate_dataset, AE_ADVERSEEVENTS[["AEACN"]])
+  names(intermediate_dataset)[names(intermediate_dataset) == "AE_ADVERSEEVENTS[[\"AEACN\"]]"] <- "AEACN"
+} else {
+  warning("Количество строк в intermediate_dataset и AE_ADVERSEEVENTS различается.")
+}
+
+# Определение допустимых значений для AEACN
+allowed_actions <- c("Без изменений", "Доза снижена", "Временно прекращен прием препарата", "Прекращен прием препарата", "Не применимо", "Не известно")
+
+# Проверка и добавление ошибок для AEACN в intermediate_dataset
+errors_AEACN <- intermediate_dataset %>%
+  mutate(Variable = "AEACN",
+         Value = ifelse(is.na(AEACN), "NA", AEACN)) %>%
+  filter(!AEACN %in% allowed_actions) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AEACN)
+
+```
+
+
+# Str 41 (Resolution)
+
+```{r}
+# Определение допустимых значений для AERES
+allowed_results <- c("Выздоровление без осложнений", "Стадия выздоровления", "Без изменений", "Выздоровление с осложнениями", "Смерть", "Не известно")
+
+# Проверка и добавление ошибок для AERES в AE_ADVERSEEVENTS
+errors_AERES <- AE_ADVERSEEVENTS %>%
+  mutate(Variable = "AEOUT",
+         Value = ifelse(is.na(AEOUT), "NA", AEOUT)) %>%
+  filter(!AEOUT %in% allowed_results) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AERES)
+
+# Замена терминов в AE_ADVERSEEVENTS
+AE_ADVERSEEVENTS$AEOUT <- recode(AE_ADVERSEEVENTS$AEOUT,
+                                 "Выздоровление без последствий" = "Выздоровление без осложнений")
+
+# Проверка на совпадение количества строк
+if (nrow(intermediate_dataset) == nrow(AE_ADVERSEEVENTS)) {
+  intermediate_dataset <- cbind(intermediate_dataset, AE_ADVERSEEVENTS[["AEOUT"]])
+  names(intermediate_dataset)[names(intermediate_dataset) == "AE_ADVERSEEVENTS[[\"AEOUT\"]]"] <- "AERES"
+} else {
+  warning("Количество строк в intermediate_dataset и AE_ADVERSEEVENTS различается.")
+}
+
+```
+
+# Str 42 (Resolution (N))
+
+```{r}
+
+# Добавление и вычисление AERESN в intermediate_dataset
+intermediate_dataset <- intermediate_dataset %>%
+  mutate(
+    AERESN = case_when(
+      AERES == "Выздоровление без осложнений" ~ 1L,
+      AERES == "Стадия выздоровления" ~ 2L,
+      AERES == "Без изменений" ~ 3L,
+      AERES == "Выздоровление с осложнениями" ~ 4L,
+      AERES == "Смерть" ~ 5L,
+      AERES == "Не известно" ~ 6L,
+      TRUE ~ NA_integer_  # Для всех остальных случаев
+    )
+  )
+
+# Определение допустимых значений для AERESN
+allowed_results_AERESN <- 1:6
+
+# Проверка и добавление ошибок для AERESN в intermediate_dataset
+errors_AERESN <- intermediate_dataset %>%
+  mutate(Variable = "AERESN",
+         Value = ifelse(is.na(AERESN), "NA", as.character(AERESN))) %>%
+  filter(!(AERESN %in% allowed_results_AERESN | is.na(AERESN))) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AERESN)
+
+```
+
+# Str 43 (Concomitant Medication Flag)
+
+```{r}
+
+# Добавление и вычисление AECMFL в intermediate_dataset
+intermediate_dataset <- intermediate_dataset %>%
+  mutate(
+    AECMFL = ifelse(AE_ADVERSEEVENTS$AECONTRT == "Да", "Y", "N")
+  )
+
+# Проверка и добавление ошибок для AECMFL в intermediate_dataset
+allowed_terms_AECMFL <- c("Y", "N")
+
+errors_AECMFL <- intermediate_dataset %>%
+  mutate(Variable = "AECMFL",
+         Value = AECMFL) %>%
+  filter(!AECMFL %in% allowed_terms_AECMFL) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AECMFL)
+
+```
+
+# Str 44 (Safety Population Flag)
+
+```{r}
+
+# Копирование переменной SAFFL из ADSL в ADAE
+ADAE$SAFFL <- ADSL$SAFFL
+
+# Проверка и добавление ошибок для SAFFL
+errors_SAFFL <- ADAE %>%
+  mutate(Variable = "SAFFL",
+         Value = ifelse(is.na(SAFFL), "NA", as.character(SAFFL))) %>%
+  filter(!SAFFL %in% c("Y", "N")) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_SAFFL)
+
+```
+
+# Str 45 (Age)
+
+```{r}
+
+# Копирование переменной AGE из ADSL в ADAE
+ADAE$AGE <- ADSL$AGE
+
+# Проверка и добавление ошибок для AGE
+errors_AGE <- ADAE %>%
+  mutate(Variable = "AGE",
+         Value = ifelse(is.na(AGE), "NA", as.character(AGE))) %>%
+  filter(!is.numeric(AGE) | is.na(AGE)) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_AGE)
+
+```
+
+# Str 46 (Sex)
+
+```{r}
+
+# Копирование переменной SEX из ADSL в ADAE
+ADAE$SEX <- ADSL$SEX
+
+# Проверка и добавление ошибок для SEX
+errors_SEX <- ADAE %>%
+  mutate(Variable = "SEX",
+         Value = ifelse(is.na(SEX), "NA", as.character(SEX))) %>%
+  filter(SEX != "Мужской" | is.na(SEX)) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_SEX)
+
+```
+
+# Str 47 (Weight)
+
+```{r}
+
+# Копирование переменной WEIGHT из ADSL в ADAE
+ADAE$WEIGHT <- ADSL$WEIGHTBL
+
+# Проверка и добавление ошибок для WEIGHT
+errors_WEIGHT <- ADAE %>%
+  mutate(Variable = "WEIGHT",
+         Value = ifelse(is.na(WEIGHT), "NA", as.character(WEIGHT))) %>%
+  filter(!is.numeric(WEIGHT) | is.na(WEIGHT)) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_WEIGHT)
+
+```
+
+# Str 48 (Race)
+
+```{r}
+
+# Копирование переменной RACE из ADSL в ADAE
+ADAE$RACE <- ADSL$RACE
+
+# Определение допустимых значений для RACE
+allowed_races <- c("Европеоидная", "Монголоидная", "Негроидная", "Прочие расы")
+
+# Проверка и добавление ошибок для RACE
+errors_RACE <- ADAE %>%
+  mutate(Variable = "RACE",
+         Value = ifelse(is.na(RACE), "NA", as.character(RACE))) %>%
+  filter(!RACE %in% allowed_races) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_RACE)
+
+```
+
+Ввод следующих переменных требует изменения формата дат, добавления дополнительных столбцов, поэтому введен вспомогательный датасет combined_data.
+
+# Str 12 (Period)
+
+```{r}
+
+# Создание нового датафрейма с данными из ADSL
+adsl_dates <- ADSL %>%
+  select(SUBJID, AP01SDT, AP01EDT, AP02SDT, AP02EDT)
+
+# Преобразование строковых дат в формат Date
+adsl_dates <- adsl_dates %>%
+  mutate(
+    AP01SDT = dmy(AP01SDT),
+    AP01EDT = dmy(AP01EDT),
+    AP02SDT = dmy(AP02SDT),
+    AP02EDT = dmy(AP02EDT)
+  )
+
+# Добавление данных из AE_ADVERSEEVENTS
+combined_data <- AE_ADVERSEEVENTS %>%
+  select(SUBJID, AESTDTC) %>%
+  mutate(AESTDTC = ymd(AESTDTC)) %>%
+  left_join(adsl_dates, by = "SUBJID")
+
+# Создание столбца APEPIOD
+combined_data <- combined_data %>%
+  mutate(
+    APERIOD = case_when(
+      AESTDTC >= AP01SDT & AESTDTC <= AP01EDT ~ 1L,
+      AESTDTC >= AP02SDT & AESTDTC <= AP02EDT ~ 2L,
+      TRUE ~ NA_integer_
+    )
+  )
+
+# Проверка и добавление ошибок для AREPIOD в combined_data
+errors_APERIOD <- combined_data %>%
+  filter(!(APERIOD %in% c(1, 2)) | is.na(APERIOD)) %>%
+  mutate(
+    Variable = "APERIOD",
+    Value = ifelse(is.na(APERIOD), "NA", as.character(APERIOD))
+  ) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_APERIOD)
+
+```
+
+
+# Str 13 (Period (С))
+
+```{r}
+
+# Добавление и вычисление APERIODC в combined_data
+combined_data <- combined_data %>%
+  mutate(
+    APERIODC = case_when(
+      APERIOD == 1 ~ "Период 1",
+      APERIOD == 2 ~ "Период 2",
+      TRUE ~ NA_character_  # Для всех остальных случаев
+    )
+  )
+
+# Проверка и добавление ошибок для APERIODC в combined_data
+errors_APERIODC <- combined_data %>%
+  filter(!(APERIODC %in% c("Период 1", "Период 2")) | is.na(APERIODC)) %>%
+  mutate(Variable = "APERIODC", Value = APERIODC) %>%
+  select(SUBJID, Variable, Value)
+
+# Объединение ошибок
+errors <- rbind(errors, errors_APERIODC)
+
+```
+
+# Str 14 (Treatment Emergent Analysis Flag)
+
+```{r}
+
+# Копирование ASTDT из intermediate_data в combined_data
+combined_data$ASTDT <- intermediate_dataset$ASTDT
+
+# Преобразование ASTDT в формат Date
+combined_data <- combined_data %>%
+  mutate(
+    ASTDT = dmy(ASTDT)
+  )
+
+# Добавление столбца TRTEMFL
+combined_data <- combined_data %>%
+  mutate(
+    TRTEMFL = case_when(
+      (ASTDT >= AP01SDT & ASTDT <= AP01EDT) | 
+      (ASTDT >= AP02SDT & ASTDT <= AP02EDT) ~ "Y",
+      TRUE ~ NA_character_
+    )
+  )
+
+```
+
+# Str 15 (Pre-treatment Flag)
+
+```{r}
+
+# Добавление столбца PREFL
+combined_data <- combined_data %>%
+  mutate(
+    PREFL = if_else(ASTDT < AP01SDT, "Y", NA_character_)
+  )
+
+```
+
+# Str 16 (Planned Treatment)
+
+```{r}
+
+# Добавление TRT01P и TRT02P из ADSL в combined_data
+combined_data <- combined_data %>%
+  left_join(select(ADSL, SUBJID, TRT01P, TRT02P), by = "SUBJID")
+
+# Добавление столбца TRTP
+combined_data <- combined_data %>%
+  mutate(
+    TRTP = case_when(
+      APERIOD == 1 ~ TRT01P,
+      APERIOD == 2 ~ TRT02P,
+      TRUE ~ NA_character_
+    )
+  )
+
+```
+
+
+# Str 17 (Planned Treatment (N))
+
+```{r}
+
+# Добавление TRT01PN и TRT02PN из ADSL в combined_data
+combined_data <- combined_data %>%
+  left_join(select(ADSL, SUBJID, TRT01PN, TRT02PN), by = "SUBJID")
+
+# Добавление столбца TRTPN
+combined_data <- combined_data %>%
+  mutate(
+    TRTPN = case_when(
+      APERIOD == 1 ~ TRT01PN,
+      APERIOD == 2 ~ TRT02PN,
+      TRUE ~ NA_integer_
+    )
+  )
+
+```
+
+
+# Str 20 (Body System or Organ Class)
+
+```{r}
+
+
+# Предположим, что строки в combined_data и AE_ADVERSEEVENTS соответствуют друг другу
+# Копируем AEBODSYS и AEDECOD из AE_ADVERSEEVENTS в combined_data
+combined_data$AEBODSYS <- AE_ADVERSEEVENTS$AEBODSYS
+combined_data$AEDECOD <- AE_ADVERSEEVENTS$AEDECOD
+
+# Теперь построчно добавляем перевод из terms_translation
+combined_data <- combined_data %>%
+  rowwise() %>%
+  mutate(
+    SOCT = terms_translation$SOCT[terms_translation$SOC == AEBODSYS & terms_translation$PT == AEDECOD],
+    AEBODSYS = ifelse(is.na(SOCT), AEBODSYS, paste(AEBODSYS, "(", SOCT, ")", sep = ""))
+  ) %>%
+  ungroup()
+
+# Удаление столбцов AEDECOD и SOCT из combined_data
+combined_data <- combined_data %>%
+  select(-AEDECOD, -SOCT)
+
+
+```
+
+# Str 30 (Analysis Duration (N))
+
+```{r}
+
+# Копирование AENDT из intermediate_dataset в combined_data
+combined_data$AENDT <- intermediate_dataset$AENDT
+
+# Преобразование AENDT в формат Date (если это еще не сделано)
+combined_data <- combined_data %>%
+  mutate(
+    AENDT = dmy(AENDT)
+  )
+
+# Добавление столбца ADURN
+combined_data <- combined_data %>%
+  mutate(
+    ADURN = as.integer(AENDT - ASTDT + 1)
+  )
+
+```
+
+
+# Str 31 (Analysis Duration Units)
+
+```{r}
+
+# Добавление столбца ADURU с значением "день"
+combined_data <- combined_data %>%
+  mutate(
+    ADURU = "день"
+  )
+
+```
+
+# Str 33 (Phase)
+
+```{r}
+
+# Добавление столбца APHASE в combined_data
+combined_data <- combined_data %>%
+  mutate(
+    APHASE = case_when(
+      PREFL == 'Y' ~ 'Скрининг',
+      TRTEMFL == 'Y' ~ 'Лечение',
+      TRUE ~ NA_character_  # Все остальные случаи
+    )
+  )
+
+```
+
+# Объединение intermediate_dataset (с данными из AE_ADVERSEEVENTS) и combined_data (с данными из AE_ADVERSEEVENTS, ADSL, terms_translation)
+
+```{r}
+
+# Добавление столбцов из combined_data в intermediate_dataset построчно
+intermediate_dataset <- cbind(intermediate_dataset, combined_data[c("APERIOD", "APERIODC", "TRTEMFL", "PREFL", "TRTP", "TRTPN", "AEBODSYS", "ADURN", "ADURU", "APHASE")])
+
+```
+
+# Объединение ADAE и intermediate_dataset
+
+```{r}
+
+# Объединение ADAE и intermediate_dataset по SUBJID
+ADAE <- ADAE %>%
+  full_join(intermediate_dataset, by = "SUBJID")
+
+```
+
+# Переупорядочивание столбцов в ADAE 
+
+```{r}
+
+ADAE <- ADAE %>%
+  select(
+    STUDYID, SUBJID, USUBJID, SITEID, TRTSEQP, TRTSEQPN, AP01SDT, AP01EDT, AP02SDT, AP02EDT,
+    APERIOD, APERIODC, TRTEMFL, PREFL, TRTP, TRTPN, AESEQ, AETERM, AEBODSYS, AEDECOD,
+    AESTDTC, ASTDT, ASTDTF, AEENDTC, AENDT, AENDTF, AEENRTPT, AEENRF, ADURN, ADURU,
+    AESER, APHASE, AESEV, ASEVN, AEREL, AERELN, RELGR1, RELGR1N, AEACN, AERES, AERESN,
+    AECMFL, SAFFL, AGE, SEX, WEIGHT, RACE
+  )
+
+```
+
+# Сохранение ADAE в файл CSV
+
+```{r}
+
+write.csv(ADAE, "ADAE.csv", row.names = FALSE)
+
+```
+
+# Внесение комментариев в errors
+
+```{r}
+
+# Добавление столбца Comments
+errors <- errors %>%
+  mutate(
+    Comments = case_when(
+      row_number() == 1 ~ "не пройден скрининг, не является несоответствием",
+      row_number() == 2 ~ "не пройден скрининг, не является несоответствием",
+      row_number() %in% 3:4 ~ "не принимался препарат, не является несоответствием",
+      row_number() %in% 5:8 ~ "не пройден скрининг, не является несоответствием",
+      row_number() %in% 9:19 ~ "Проведена замена терминов AE_ADVERSEEVENTS$AESEV, 'Легкое' = 'Легкая', 'Среднее' = 'Средняя', 'Тяжелое' = 'Тяжелая'",
+      row_number() %in% 20:30 ~ "Проведена замена терминов AE_ADVERSEEVENTS$AEOUT, 'Выздоровление без последствий' = 'Выздоровление без осложнений'",
+      row_number() %in% 31:32 ~ "не является несоответствием",
+      TRUE ~ ""
+    )
+  )
+
+```
+
+# Сохранение errors в файл CSV
+
+```{r}
+
+write.csv(errors, "errors.csv", row.names = FALSE)
+
+```
